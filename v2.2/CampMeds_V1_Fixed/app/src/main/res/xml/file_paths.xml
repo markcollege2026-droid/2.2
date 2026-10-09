@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- QR label PNGs written here are shared through the system share sheet. -->
+    <cache-path name="qr" path="qr/" />
+</paths>
