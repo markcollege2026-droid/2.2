@@ -101,7 +101,7 @@ object NdcNormalizer {
         8 -> ok(text, digits, PRODUCT_SHAPES.map { candidate(split(digits, it), isPackage = false) })
 
         // 9 digits: the product portion of the billing format (4-4 or 5-3 with the padding zero added).
-        9 -> productBillingReadings(split(digits, BILLING_PRODUCT_SHAPE), text, digits)
+        9 -> billingProductReadings(split(digits, BILLING_PRODUCT_SHAPE), text, digits)
 
         // 10 digits: a package NDC, split 4-4-2, 5-3-2 or 5-4-1.
         10 -> ok(text, digits, PACKAGE_SHAPES.map { candidate(split(digits, it), isPackage = true) })
