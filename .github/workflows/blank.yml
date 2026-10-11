@@ -11,6 +11,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      pull-requests: write
+
     defaults:
       run:
         working-directory: v2.2/CampMeds_V1_Fixed
@@ -50,23 +54,17 @@ jobs:
           set -eo pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
 
+      # The build log goes into the job summary so it can be read back through the Actions API even where
+      # artifact and log downloads are unavailable.
       - name: Publish Gradle output on failure
         if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "Gradle output (tail) for ${{ github.sha }}:"
+            echo "Gradle output (tail) for ${{ github.sha }}"
             echo '```'
-            tail -c 40000 gradle-output.log 2>/dev/null || echo "gradle-output.log not found"
+            tail -c 60000 gradle-output.log 2>/dev/null || echo "gradle-output.log not found"
             echo '```'
-          } > failure-report.md
-          PR="${{ github.event.pull_request.number }}"
-          if [ -n "$PR" ]; then
-            gh pr comment "$PR" --body-file failure-report.md
-          else
-            gh api "repos/${{ github.repository }}/issues" -f title="Build failure ${{ github.sha }}" -F body=@failure-report.md > /dev/null
-          fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test reports
         if: always()
