@@ -66,8 +66,11 @@ class PrepackagedGroupsTest {
 
     @Test
     fun scheduledAtTheSameTimeIsNotAGroup() {
+        // Beta and Loner are both scheduled for 08:00; only Beta was marked as prepackaged, so the group
+        // holds Beta alone (and its label follows the members present, not the ones missing).
         val groups = PrepackagedGroups.groupsOfPatient(listOf(betaP1, lonerP1), "p1")
-        assertEquals(listOf("Alpha + Beta"), groups.map { it.label })
+        assertEquals(listOf("Beta"), groups.map { it.label })
+        assertEquals(listOf(betaP1), groups.single().members)
     }
 
     @Test

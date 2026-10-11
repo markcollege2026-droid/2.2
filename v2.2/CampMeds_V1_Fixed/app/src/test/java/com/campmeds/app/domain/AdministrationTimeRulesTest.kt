@@ -99,6 +99,16 @@ class AdministrationTimeRulesTest {
 
         assertEquals(listOf(LocalTime.of(8, 30)), updated.scheduleTimes)
         assertEquals(listOf("t-breakfast"), updated.administrationTimeIds)
+
+        // The same collision with the custom time listed first: the name still wins.
+        val customFirst = medication(
+            times = listOf(LocalTime.of(9, 0), LocalTime.of(8, 30)),
+            ids = listOf("", "t-breakfast")
+        )
+        val merged = AdministrationTimeRules.retime(customFirst, "t-breakfast", LocalTime.of(9, 0))
+
+        assertEquals(listOf(LocalTime.of(9, 0)), merged.scheduleTimes)
+        assertEquals(listOf("t-breakfast"), merged.administrationTimeIds)
     }
 
     @Test

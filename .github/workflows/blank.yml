@@ -55,7 +55,7 @@ jobs:
           set -eo pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
 
-      # The Gradle output is published as a job summary, as error annotations and as a check run of its own:
+      # The Gradle output is published as a job summary, as error annotations and as the job's own check run:
       # all three can be read back through the Actions API even where artifact and log downloads are not
       # reachable from the machine that is reviewing the build.
       - name: Publish Gradle output on failure
@@ -63,44 +63,51 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Gradle's console output only names failing tests, so pull the assertion text out of the JUnit XML.
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          chunks = []
+          for path in sorted(glob.glob("app/build/reports/tests/**/*.xml", recursive=True)):
+              try:
+                  root = ET.parse(path).getroot()
+              except Exception:
+                  continue
+              for case in root.iter("testcase"):
+                  for kind in ("failure", "error"):
+                      for problem in case.findall(kind):
+                          chunks.append(
+                              "{0} > {1}\n    {2}".format(
+                                  case.get("classname") or path,
+                                  case.get("name"),
+                                  (problem.get("message") or problem.get("type") or "").strip()[:3000],
+                              )
+                          )
+          if chunks:
+              open("test-failures.txt", "w", encoding="utf-8").write("\n\n".join(chunks))
+          PY
+
+          SOURCE=gradle-output.log
+          if [ -s test-failures.txt ]; then SOURCE=test-failures.txt; fi
+
           {
             echo "Gradle output (tail) for ${{ github.sha }}"
             echo '```'
-            tail -c 60000 gradle-output.log 2>/dev/null || echo "gradle-output.log not found"
+            tail -c 60000 "$SOURCE" 2>/dev/null || echo "no output captured"
             echo '```'
           } > failure-report.md
           cat failure-report.md >> "$GITHUB_STEP_SUMMARY"
 
-          # A single annotation survives per step, so it carries the very end of the log (where the failure is).
+          # One annotation survives per step: it carries the end of the report, where the failure detail is.
           python3 - <<'PY'
           import os
 
-          path = "gradle-output.log"
-          text = open(path, encoding="utf-8", errors="replace").read() if os.path.exists(path) else "gradle-output.log missing"
+          path = "failure-report.md"
+          text = open(path, encoding="utf-8", errors="replace").read() if os.path.exists(path) else "failure-report.md missing"
           escaped = text[-3800:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
           print("::error title=Gradle output (tail)::{0}".format(escaped))
-          PY
-
-          # The full tail goes into a check run, whose output has a much larger limit.
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-
-          path = "gradle-output.log"
-          text = open(path, encoding="utf-8", errors="replace").read()[-60000:] if os.path.exists(path) else "gradle-output.log missing"
-          payload = {
-              "name": "gradle-output",
-              "head_sha": os.environ.get("GITHUB_SHA", ""),
-              "status": "completed",
-              "conclusion": "failure",
-              "output": {"title": "Gradle output (tail)", "summary": text},
-          }
-          subprocess.run(
-              ["gh", "api", "-X", "POST", "repos/{0}/check-runs".format(os.environ.get("GITHUB_REPOSITORY", "")), "--input", "-"],
-              input=json.dumps(payload).encode("utf-8"),
-              check=False,
-          )
           PY
 
       - name: Upload test reports

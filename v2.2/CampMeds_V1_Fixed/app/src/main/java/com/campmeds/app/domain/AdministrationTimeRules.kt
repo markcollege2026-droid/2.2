@@ -41,8 +41,10 @@ object AdministrationTimeRules {
     /** "Breakfast 08:00 · Bedtime 21:00" for lists and cards. */
     fun scheduleSummary(medication: Medication, definitions: Map<String, AdministrationTime>): String =
         medication.scheduleTimes.mapIndexed { index, time ->
-            val label = labelFor(time, definitions[definitionIdAt(medication, index)])
-            "$label ${time.format(HH_MM)}"
+            val definition = definitions[definitionIdAt(medication, index)]
+            val label = labelFor(time, definition)
+            // "Breakfast 08:00" for a named time; a custom time is already just its clock time.
+            if (definition?.name.isNullOrBlank()) label else "$label ${time.format(HH_MM)}"
         }.joinToString(" · ")
 
     /**
@@ -73,7 +75,12 @@ object AdministrationTimeRules {
             if (definitionIdAt(medication, index) == definitionId) newTime to definitionId else time to definitionIdAt(medication, index)
         }
         val merged = LinkedHashMap<LocalTime, String>()
-        updated.forEach { (time, id) -> merged[time] = id } // first writer wins for equal times
+        // Two positions can land on the same time: one dose, and the entry's name wins over a custom time
+        // so a named dose never turns into an anonymous one just because of the order it was listed in.
+        updated.forEach { (time, id) ->
+            val existing = merged[time]
+            if (existing == null || (existing.isBlank() && id.isNotBlank())) merged[time] = id
+        }
         val times = merged.keys.sorted()
         return medication.copy(
             scheduleTimes = times,

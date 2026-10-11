@@ -202,8 +202,9 @@ class NdcNormalizerTest {
     fun wrongSegmentArrangementsAreRejectedAndNameTheArrangement() {
         assertTrue(invalid("1-2-3-4").message.contains("one or two dashes"))
         assertTrue(invalid("123456-78").message.contains("between 1 and 5 digits"))
-        // 2-4-2 (a labeler code with its first zero dropped) is not one of the recognised arrangements.
-        assertTrue(invalid("069-2587-68").message.contains("2-4-2"))
+        // A labeler segment shorter than 4 digits (3-4-2 here) is not a recognised arrangement either; the
+        // message names the arrangement as typed so the label can be checked digit by digit.
+        assertTrue(invalid("069-2587-68").message.contains("3-4-2"))
         // 5-5 is not a recognised two-segment arrangement.
         assertTrue(invalid("12345-67890").message.contains("5-5"))
     }
