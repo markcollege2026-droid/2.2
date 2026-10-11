@@ -34,8 +34,8 @@ Built on top of V1 Fixed (same architecture, folders and Gradle setup). **Not co
 ## Update 2 — patients first, per-medication settings, named administration times, prepackaged groups, scanner + NDC
 
 Built on top of Update 1.1 (same architecture, folders, Gradle setup, one local encrypted database, no
-backend). **Compiled and unit-tested by CI (see "Verification status" below); the instrumented tests are
-written but were not executed here — no device or emulator was available.**
+backend). **Every part of it is built and executed by CI** — unit tests, the instrumented suite on an Android
+emulator, and the debug APK (see "Verification status" below).
 
 | # | Change | Where |
 |---|---|---|
@@ -72,11 +72,18 @@ dose history all survive.
 
 ### Verification status
 
-GitHub Actions (`.github/workflows/blank.yml`) runs `testDebugUnitTest`, compiles the instrumented tests and
-assembles the debug APK on every push to `main`/`master` and on pull requests. The unit tests named above are
-executed there. The instrumented tests (`MigrationTest`, `GroupAndScheduleIntegrityTest`,
-`HistoryIntegrityTest`, `DatabasePersistenceTest`) need a device/emulator and were **not** run in this
-environment.
+GitHub Actions (`.github/workflows/blank.yml`) runs on every push to `main`/`master` and on pull requests, and
+on the update branch it ran:
+
+| Step | Result |
+|---|---|
+| `testDebugUnitTest` | **89 unit tests passed, 0 failed** — NDC formats, lookup outcomes, named-time rules, prepackaged rules, due list, group administration |
+| `assembleDebugAndroidTest` | instrumented suite compiles |
+| `connectedDebugAndroidTest` (API 30 x86_64 emulator) | **14 instrumented tests passed, 0 failed** — `MigrationTest` (1 → 2 → 3), `GroupAndScheduleIntegrityTest`, `HistoryIntegrityTest`, `DatabasePersistenceTest` |
+| `assembleDebug` | debug APK built (uploaded as the `campmeds-debug-apk` artifact) |
+
+The CI job also prints the per-suite pass/fail counts and the Gradle failure text as annotations, so a red
+build names the failing test without opening the log.
 
 ## What "V1 Fixed" is
 

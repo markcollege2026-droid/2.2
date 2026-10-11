@@ -69,13 +69,10 @@ jobs:
           set -eo pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
 
-      # The Gradle output is published as a job summary, as error annotations and as the job's own check run:
-      # all three can be read back through the Actions API even where artifact and log downloads are not
-      # reachable from the machine that is reviewing the build.
+      # The failure text is published as a job summary and as an annotation: both can be read back through the
+      # Actions API, unlike the console log, which some environments cannot download.
       - name: Publish Gradle output on failure
         if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           # Gradle's console output only names failing tests, so pull the assertion text out of the JUnit XML.
           python3 - <<'PY'
