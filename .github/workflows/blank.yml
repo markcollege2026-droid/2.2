@@ -58,7 +58,10 @@ jobs:
         with:
           api-level: 30
           arch: x86_64
-          target: default
+          # The ATD image is built for headless instrumented tests: it boots faster and does not bring up the
+          # UI apps that make the default image flaky on a runner without a GPU.
+          target: aosp_atd
+          emulator-boot-timeout: 900
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           working-directory: v2.2/CampMeds_V1_Fixed
