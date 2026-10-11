@@ -14,6 +14,7 @@ android {
         targetSdk = 34
         versionCode = 2
         versionName = "1.1-prototype"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -53,6 +54,13 @@ android {
 // Export the Room schema JSON so migrations (V1 -> V2 ...) can be written and tested against a real baseline.
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// The migration test ships app/schemas as androidTest assets, and KSP writes the current schema into that
+// directory while compiling the app. Make that ordering explicit so the packaged assets always contain the
+// generated schema JSON, whichever task the build happens to schedule first.
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("AndroidTestAssets") }.configureEach {
+    dependsOn("kspDebugKotlin")
 }
 
 dependencies {
@@ -107,5 +115,7 @@ dependencies {
     // android.jar's org.json is a stub in plain JVM unit tests; the real implementation is needed for NdcApiClient tests.
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    // One of these tests is run on a device for every migration; the runner is what makes them runnable.
+    androidTestImplementation("androidx.test:runner:1.6.1")
     androidTestImplementation("androidx.room:room-testing:2.6.1")
 }

@@ -50,6 +50,20 @@ jobs:
           set -eo pipefail
           ./gradlew assembleDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
 
+      # The migrations and the integrity guarantees are only proven by running them on a device, so the
+      # suite is executed on an emulator. Compiling it is still a separate step above: that reports a broken
+      # test source quickly, without waiting for a booted device.
+      - name: Run instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          working-directory: v2.2/CampMeds_V1_Fixed
+          script: ./gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
+
       - name: Build Debug APK
         run: |
           set -eo pipefail
