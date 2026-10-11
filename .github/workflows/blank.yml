@@ -62,7 +62,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           working-directory: v2.2/CampMeds_V1_Fixed
-          script: set -eo pipefail; ./gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
+          script: bash -e -o pipefail -c './gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log'
 
       - name: Build Debug APK
         run: |
