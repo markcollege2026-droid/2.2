@@ -124,12 +124,50 @@ jobs:
           print("::error title=Gradle output (tail)::{0}".format(escaped))
           PY
 
+      # Counts are surfaced as annotations because those can be read back through the Actions API, unlike the
+      # console log. Both suites are counted, whichever of them ran.
+      - name: Summarize test results
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ET
+
+          suites = {
+              "Unit tests": "app/build/test-results/testDebugUnitTest/*.xml",
+              "Instrumented tests": "app/build/outputs/androidTest-results/connected/**/*.xml",
+          }
+          for label, pattern in suites.items():
+              tests = failures = errors = skipped = 0
+              files = sorted(glob.glob(pattern, recursive=True))
+              for path in files:
+                  try:
+                      root = ET.parse(path).getroot()
+                  except Exception:
+                      continue
+                  tests += int(root.get("tests") or 0)
+                  failures += int(root.get("failures") or 0)
+                  errors += int(root.get("errors") or 0)
+                  skipped += int(root.get("skipped") or 0)
+              if files:
+                  print(
+                      "::notice title={0}::{1} passed, {2} failed, {3} errored, {4} skipped".format(
+                          label, tests - failures - errors - skipped, failures, errors, skipped
+                      )
+                  )
+              else:
+                  print("::notice title={0}::not run in this build".format(label))
+          PY
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: campmeds-test-reports
-          path: v2.2/CampMeds_V1_Fixed/app/build/reports/tests
+          path: |
+            v2.2/CampMeds_V1_Fixed/app/build/reports/tests
+            v2.2/CampMeds_V1_Fixed/app/build/reports/androidTests
+            v2.2/CampMeds_V1_Fixed/app/build/outputs/androidTest-results
           if-no-files-found: ignore
 
       - name: Upload Build Artifact
