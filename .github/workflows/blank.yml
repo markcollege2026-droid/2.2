@@ -54,8 +54,8 @@ jobs:
           set -eo pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
 
-      # The build log goes into the job summary so it can be read back through the Actions API even where
-      # artifact and log downloads are unavailable.
+      # The Gradle output is published as a job summary and as error annotations, both of which can be read
+      # back through the Actions API even where artifact and log downloads are unavailable.
       - name: Publish Gradle output on failure
         if: failure()
         run: |
@@ -64,7 +64,19 @@ jobs:
             echo '```'
             tail -c 60000 gradle-output.log 2>/dev/null || echo "gradle-output.log not found"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } > failure-report.md
+          cat failure-report.md >> "$GITHUB_STEP_SUMMARY"
+
+          python3 - <<'PY'
+          import os
+
+          path = "gradle-output.log"
+          text = open(path, encoding="utf-8", errors="replace").read()[-60000:] if os.path.exists(path) else "gradle-output.log missing"
+          escaped = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          chunk = 45000
+          for index, start in enumerate(range(0, len(escaped), chunk)):
+              print("::error title=Gradle output part {0}::{1}".format(index + 1, escaped[start:start + chunk]))
+          PY
 
       - name: Upload test reports
         if: always()
