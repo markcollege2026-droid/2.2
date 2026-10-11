@@ -69,6 +69,13 @@ dose history all survive.
   medication is listed for transparency but recorded separately (or not at all).
 * **A group is never created automatically** and never spans patients (enforced in the form, in
   `PrepackagedGroups.validate` and again in `CampMedsRepository.saveMedicationEdit`).
+* **A lookup that is spread over several requests cannot be sunk by one of them.** A number typed without
+  dashes is searched in each legal reading (a 10-digit package code can be read 4-4-2, 5-3-2 or 5-4-1), so
+  one NDC entry can mean two or three requests. A momentary `5xx`/`429` from openFDA is retried once; if a
+  reading still cannot be checked, the record another reading found is shown **and** the readings that could
+  not be checked are named, so the label can be re-checked — a failed request never turns a good lookup into
+  "lookup failed", and it is never reported as "no such record" either. (This is what made 5-3-2 codes such
+  as `68180-613-07` come back as a lookup failure when typed without dashes.)
 
 ### Verification status
 
@@ -77,13 +84,18 @@ on the update branch it ran:
 
 | Step | Result |
 |---|---|
-| `testDebugUnitTest` | **89 unit tests passed, 0 failed** — NDC formats, lookup outcomes, named-time rules, prepackaged rules, due list, group administration |
+| `testDebugUnitTest` | **102 unit tests passed, 0 failed** — NDC formats (5-3-2 and pasted values included), lookup outcomes and retry behaviour, named-time rules, prepackaged rules, due list, group administration |
 | `assembleDebugAndroidTest` | instrumented suite compiles |
 | `connectedDebugAndroidTest` (API 30 x86_64 emulator) | **14 instrumented tests passed, 0 failed** — `MigrationTest` (1 → 2 → 3), `GroupAndScheduleIntegrityTest`, `HistoryIntegrityTest`, `DatabasePersistenceTest` |
 | `assembleDebug` | debug APK built (uploaded as the `campmeds-debug-apk` artifact) |
 
 The CI job also prints the per-suite pass/fail counts and the Gradle failure text as annotations, so a red
 build names the failing test without opening the log.
+
+The requests the client builds were also checked against the live openFDA NDC Directory by hand: the 5-3-2
+package codes `68180-613-07` (Quetiapine, Lupin) and `10695-114-18` (Vancomycin HCL, Willow Birch) both come
+back with their record, their 4-4-2 and 5-4-1 readings do not, and the directory answers `5xx` often enough
+that one retry is worth having.
 
 ## What "V1 Fixed" is
 
