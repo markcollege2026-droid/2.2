@@ -62,7 +62,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           working-directory: v2.2/CampMeds_V1_Fixed
-          script: ./gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
+          script: set -eo pipefail; ./gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
 
       - name: Build Debug APK
         run: |
@@ -151,6 +151,16 @@ jobs:
                       failures += int(suite.get("failures") or 0)
                       errors += int(suite.get("errors") or 0)
                       skipped += int(suite.get("skipped") or 0)
+                  for case in root.iter("testcase"):
+                      for kind in ("failure", "error"):
+                          for problem in case.findall(kind):
+                              detail = "{0} > {1} :: {2}".format(
+                                  case.get("classname") or path,
+                                  case.get("name"),
+                                  (problem.get("message") or problem.get("type") or "").strip()[:2000],
+                              )
+                              escaped = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                              print("::error title={0}::{1}".format(label, escaped))
               if not files:
                   print("::notice title={0}::not run in this build".format(label))
               else:
