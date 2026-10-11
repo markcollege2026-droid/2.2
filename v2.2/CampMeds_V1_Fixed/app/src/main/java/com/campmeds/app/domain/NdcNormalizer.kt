@@ -27,6 +27,9 @@ package com.campmeds.app.domain
  *  - Anything that is not one of the recognised arrangements is [Parsed.Invalid] with a specific reason
  *    (wrong length, wrong characters, wrong arrangement) — never silently "fixed" into something else.
  *  - The digits as typed are always preserved in [Parsed.entered].
+ *  - A value pasted from a word processor or a spreadsheet is read as it is: typographic dashes and
+ *    non-breaking spaces separate segments, zero-width characters are dropped, and digits of another script
+ *    are refused (an NDC is printed in plain ASCII digits).
  */
 object NdcNormalizer {
 
@@ -69,6 +72,37 @@ object NdcNormalizer {
 
     const val HELP = "Examples: 0069-2587 (product), 0069-2587-68 (package), 00069-2587-68 or 00069258768 (11-digit billing)."
 
+    /**
+     * Characters that carry no information but do survive a copy/paste: zero-width spaces and the byte-order
+     * mark. They are dropped before anything else — they are never considered digits.
+     */
+    private const val INVISIBLE = "\u200B\u200C\u200D\uFEFF"
+
+    /**
+     * Typographic dashes (what a word processor turns a typed "-" into) plus the non-breaking space. All of
+     * them separate segments exactly like "-" does; accepting them cannot change which digits a code has.
+     */
+    private const val SEPARATORS = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u00A0"
+
+    private val SEPARATOR_REGEX = Regex("[\\s" + SEPARATORS + "-]+")
+
+    /** Shown when a character that can never be part of an NDC turns up in the field. */
+    private fun notAnNdcChar(char: Char) =
+        "An NDC contains digits and dashes only — \"$char\" is not one of them. $HELP"
+
+    /** True for a plain ASCII digit and for nothing else: digits of another script are refused, not guessed. */
+    private fun isAsciiDigit(char: Char) = char in '0'..'9'
+
+    private fun isSeparator(char: Char) = char == '-' || char.isWhitespace() || char in SEPARATORS
+
+    private fun segmentsOf(text: String): List<String> =
+        text.split(SEPARATOR_REGEX).filter { it.isNotEmpty() }
+
+    /** Invisibles removed, and the punctuation a spreadsheet wraps around a copied value dropped. */
+    private fun cleaned(raw: String): String =
+        raw.filterNot { it in INVISIBLE }
+            .trim { it.isWhitespace() || it in SEPARATORS || it == '\'' || it == '%' }
+
     /** Convenience for callers that only need the searchable forms; an invalid input yields an empty list. */
     fun candidates(raw: String): List<Candidate> =
         when (val parsed = parse(raw)) {
@@ -77,18 +111,18 @@ object NdcNormalizer {
         }
 
     fun parse(raw: String): Parsed {
-        val text = raw.trim()
+        val text = cleaned(raw)
         if (text.isEmpty()) {
             return Parsed.Invalid("Enter an NDC number, or use Manual entry if there is no NDC.")
         }
-        if (text.any { !it.isDigit() && it != '-' && !it.isWhitespace() }) {
-            return Parsed.Invalid("An NDC contains digits and dashes only. $HELP")
-        }
+        // Nothing is removed from the value except characters that carry no digits at all, and anything
+        // unexpected stops the lookup here instead of being ignored or "corrected".
+        text.firstOrNull { !isAsciiDigit(it) && !isSeparator(it) }?.let { return Parsed.Invalid(notAnNdcChar(it)) }
 
-        val digits = text.filter { it.isDigit() }
+        val digits = text.filter { isAsciiDigit(it) }
         if (digits.isEmpty()) return Parsed.Invalid("An NDC contains digits and dashes only. $HELP")
 
-        val separated = text.any { it == '-' || it.isWhitespace() }
+        val separated = text.any { isSeparator(it) }
         return if (separated) parseSeparated(text, digits) else parseDigitsOnly(text, digits)
     }
 
@@ -122,7 +156,7 @@ object NdcNormalizer {
     // ---------------------------------------------------------------------------------------------
 
     private fun parseSeparated(text: String, digits: String): Parsed {
-        val segments = text.split(Regex("[\\s-]+")).filter { it.isNotEmpty() }
+        val segments = segmentsOf(text)
         if (segments.size !in 2..3) {
             return Parsed.Invalid("Use one or two dashes to separate the NDC segments. $HELP")
         }
@@ -227,9 +261,9 @@ object NdcNormalizer {
      * the product for 5-3(-2), the package for 5-4-1 — never to the front of the whole number.
      */
     fun toBillingForm(directoryNdc: String): String? {
-        val text = directoryNdc.trim()
+        val text = cleaned(directoryNdc)
         if (text.isEmpty()) return null
-        val segments = text.split(Regex("[\\s-]+")).filter { it.isNotEmpty() }
+        val segments = segmentsOf(text)
         val shape = segments.map { it.length }
         val billing = when (shape) {
             listOf(4, 4) -> listOf(pad(segments[0]), segments[1])

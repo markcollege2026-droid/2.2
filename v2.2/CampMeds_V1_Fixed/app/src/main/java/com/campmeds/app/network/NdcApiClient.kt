@@ -26,18 +26,25 @@ import java.util.concurrent.TimeUnit
  *  4. Failures stay failures: openFDA's 404 means "no such record" ([NdcLookupResult.NotFound]), a
  *     transport problem is [NdcLookupResult.NetworkError], anything else is [NdcLookupResult.ApiError].
  *     A lookup is never satisfied by a guess, and never blocks the form's manual-entry path.
+ *  5. One reading failing does not sink the others: the readings are all searched, a 5xx/429 answer is
+ *     retried once (openFDA's own answers are momentary), and a match found for one reading is returned even
+ *     if another reading could not be checked — the result then names the readings it could not check
+ *     ([NdcLookupResult.Found.uncheckedReadings]) so the screen asks for the label to be re-checked. Only
+ *     when NOTHING matched does a failed request become the reported outcome.
  */
 class NdcApiClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    /** Pause before the single retry of a server-side failure; 0 in tests. */
+    private val retryDelayMillis: Long = 250
 ) {
     companion object {
         private const val BASE_URL = "https://api.fda.gov/drug/ndc.json"
 
-        /** Ask for only the fields the form shows. */
-        private const val FIELDS = "product_ndc,packaging,generic_name,brand_name,dosage_form,active_ingredients"
+        // No `fields` parameter: openFDA's NDC endpoint answers "Invalid parameter: fields" for it, so the
+        // whole record is read and only the parts the form shows are kept (see [parseRecords]).
 
         /** Per request; one candidate can only ever resolve to one product record in practice. */
         private const val LIMIT = "5"
@@ -61,17 +68,28 @@ class NdcApiClient(
         }
 
         val matches = LinkedHashMap<String, Match>()
+        // Readings openFDA could not answer for, and the first failure to report if nothing else resolves.
+        val unchecked = mutableListOf<String>()
+        var failure: NdcLookupResult? = null
+
         for (candidate in parsed.candidates) {
-            when (val outcome = query(candidate.value, candidate.isPackage)) {
+            when (val outcome = queryWithOneRetry(candidate.value, candidate.isPackage)) {
                 is QueryOutcome.Matched -> matches[candidate.value] = outcome.match.copy(matchedValue = candidate.value)
                 QueryOutcome.NoMatch -> Unit
-                // A failed request means we cannot rule out a second product, so the lookup reports the
-                // failure instead of returning a possibly-ambiguous match.
-                is QueryOutcome.Failed -> return@withContext outcome.result
+                is QueryOutcome.Failed -> {
+                    // Keep checking the remaining readings: throwing away a record that another reading of
+                    // the same digits found turns a working lookup into "lookup failed" for no reason.
+                    if (failure == null) failure = outcome.result
+                    unchecked += candidate.value
+                }
             }
         }
 
-        if (matches.isEmpty()) return@withContext NdcLookupResult.NotFound
+        if (matches.isEmpty()) {
+            // Nothing matched at all. A request that failed is reported as a failure — never as "no such
+            // record", because the directory never actually answered for that number.
+            return@withContext failure ?: NdcLookupResult.NotFound
+        }
 
         val products = matches.values.map { it.productNdc }.distinct()
         if (products.size > 1) {
@@ -91,14 +109,28 @@ class NdcApiClient(
             isPackage = parsed.candidates.firstOrNull { it.value == matchedValue }?.isPackage
                 ?: (matchedValue.count { it == '-' } == 2),
             ambiguousInput = parsed.ambiguous,
-            alternatives = parsed.candidates.map { it.value }.filter { it != matchedValue }
+            alternatives = parsed.candidates.map { it.value }.filter { it != matchedValue },
+            uncheckedReadings = unchecked
         )
     }
 
     private sealed class QueryOutcome {
         data class Matched(val match: Match) : QueryOutcome()
         object NoMatch : QueryOutcome()
-        data class Failed(val result: NdcLookupResult) : QueryOutcome()
+        /**
+         * The request did not produce an answer. [retryable] marks the ones a second attempt can plausibly
+         * fix (openFDA answering 5xx or 429, or an empty body) — a transport failure is not retried, so a
+         * dead connection costs one timeout instead of two.
+         */
+        data class Failed(val result: NdcLookupResult, val retryable: Boolean) : QueryOutcome()
+    }
+
+    /** One retry for the failures that are usually momentary on openFDA's side. */
+    private fun queryWithOneRetry(value: String, isPackage: Boolean): QueryOutcome {
+        val first = query(value, isPackage)
+        if (first !is QueryOutcome.Failed || !first.retryable) return first
+        if (retryDelayMillis > 0) Thread.sleep(retryDelayMillis)
+        return query(value, isPackage)
     }
 
     private fun query(value: String, isPackage: Boolean): QueryOutcome {
@@ -116,14 +148,20 @@ class NdcApiClient(
                     // openFDA answers 404 with {"error":{"code":"NOT_FOUND"}} when nothing matches.
                     response.code == 404 -> QueryOutcome.NoMatch
                     response.code == 429 -> QueryOutcome.Failed(
-                        NdcLookupResult.ApiError("openFDA is limiting requests right now. Wait a minute and try again.")
+                        NdcLookupResult.ApiError("openFDA is limiting requests right now. Wait a minute and try again."),
+                        retryable = true
                     )
                     !response.isSuccessful -> QueryOutcome.Failed(
-                        NdcLookupResult.ApiError("openFDA returned HTTP ${response.code} for this lookup.")
+                        NdcLookupResult.ApiError("openFDA returned HTTP ${response.code} for this lookup."),
+                        // 4xx is this client's own fault (a bad query) — retrying it only wastes a request.
+                        retryable = response.code >= 500
                     )
                     else -> {
                         val body = response.body?.string()
-                        if (body.isNullOrBlank()) QueryOutcome.Failed(NdcLookupResult.ApiError("openFDA returned an empty response."))
+                        if (body.isNullOrBlank()) QueryOutcome.Failed(
+                            NdcLookupResult.ApiError("openFDA returned an empty response."),
+                            retryable = true
+                        )
                         else {
                             val records = parseRecords(body, value)
                             if (records.isEmpty()) QueryOutcome.NoMatch else QueryOutcome.Matched(records.first())
@@ -133,11 +171,12 @@ class NdcApiClient(
             }
         } catch (e: IOException) {
             // No connection, DNS failure, timeout, connection reset … all "could not reach openFDA".
-            QueryOutcome.Failed(NdcLookupResult.NetworkError(e.message ?: "Could not reach openFDA."))
+            QueryOutcome.Failed(NdcLookupResult.NetworkError(e.message ?: "Could not reach openFDA."), retryable = false)
         } catch (e: Exception) {
             // Malformed JSON and anything else unexpected: reported, never thrown out of the coroutine.
             QueryOutcome.Failed(
-                NdcLookupResult.ApiError("Unexpected response from openFDA (${e.javaClass.simpleName}).")
+                NdcLookupResult.ApiError("Unexpected response from openFDA (${e.javaClass.simpleName})."),
+                retryable = false
             )
         }
     }

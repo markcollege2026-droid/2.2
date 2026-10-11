@@ -228,4 +228,86 @@ class NdcNormalizerTest {
         assertTrue(NdcNormalizer.HELP.contains("0069-2587"))
         assertTrue(NdcNormalizer.HELP.contains("11-digit"))
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // 5-3-2 (the arrangement whose unhyphenated form is hardest to read) and pasted values.
+    // The real codes below are from the openFDA NDC Directory.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    fun fiveThreeTwoWithDashesHasExactlyOneReading() {
+        // 68180-613-07 (Lupin quetiapine): labeler 68180, product 613, package 07.
+        val parsed = ok("68180-613-07")
+
+        assertEquals(listOf("68180-613-07"), parsed.candidates.map { it.value })
+        assertEquals(listOf(5, 3, 2), parsed.candidates.single().shape)
+        assertTrue(parsed.candidates.single().isPackage)
+        assertFalse(parsed.ambiguous)
+    }
+
+    @Test
+    fun fiveThreeTwoWithoutDashesOffersAllThreeReadingsInShapeOrder() {
+        val parsed = ok("6818061307")
+
+        assertEquals(
+            listOf("6818-0613-07", "68180-613-07", "68180-6130-7"),
+            parsed.candidates.map { it.value }
+        )
+        assertEquals(
+            listOf(listOf(4, 4, 2), listOf(5, 3, 2), listOf(5, 4, 1)),
+            parsed.candidates.map { it.shape }
+        )
+        assertTrue(parsed.ambiguous)
+    }
+
+    @Test
+    fun fiveThreeTwoAndFiveFourOneBothGetTheZeroAddedToTheShortSegmentOnly() {
+        // 5-3-2: the product segment is padded (5-4-2). 5-4-1: the package segment is padded.
+        assertEquals("68180-0613-07", NdcNormalizer.toBillingForm("68180-613-07"))
+        assertEquals("68180-6130-07", NdcNormalizer.toBillingForm("68180-6130-7"))
+        // A 4-4-2 pads the labeler; the segments themselves are never touched.
+        assertEquals("00069-2587-68", NdcNormalizer.toBillingForm("0069-2587-68"))
+    }
+
+    @Test
+    fun fiveThreeTwoBillingFormIsReadBackToFiveThreeTwoNotToFourFourTwo() {
+        // 68180-0613-07 is the billing form of 68180-613-07: the zero can only be removed from the segment
+        // that carries it, so the 5-3-2 reading comes first (the 5-4-1 reading is the other legal split).
+        val values = values("68180-0613-07")
+        assertEquals("68180-613-07", values.first())
+        assertEquals(listOf("68180-613-07", "68180-0613-7"), values)
+    }
+
+    @Test
+    fun aTypographicDashOrNonBreakingSpaceSeparatesJustLikeAHyphen() {
+        // What a word processor or a spreadsheet does to a pasted NDC: en dash, non-breaking space,
+        // zero-width space and byte-order mark.
+        assertEquals(listOf("68180-613-07"), values("68180\u2013613\u201307"))
+        assertEquals(listOf("68180-613-07"), values("68180\u00A0613\u00A007"))
+        assertEquals(listOf("68180-613-07"), values("\uFEFF68180-613-07\u200B"))
+        // A leading apostrophe or trailing percent comes from a copied spreadsheet cell.
+        assertEquals(listOf("68180-613-07"), values("'68180-613-07"))
+        assertEquals(listOf("68180-613-07"), values("68180-613-07%"))
+    }
+
+    @Test
+    fun digitsOfAnotherScriptAreRejectedWithTheCharacterNamed() {
+        // Arabic-Indic digits are digits, but an NDC is printed in ASCII digits: this is refused, not searched.
+        val bad = invalid("\u0661\u0662\u0663\u0664\u0665-\u0661\u0662\u0663")
+        assertTrue(bad.message.contains("not one of them"))
+        assertTrue(NdcNormalizer.candidates("\u0661\u0662\u0663\u0664\u0665-\u0661\u0662\u0663").isEmpty())
+    }
+
+    @Test
+    fun anInvisibleCharacterIsDroppedInsteadOfBecomingADigitOrASeparator() {
+        // A zero-width space carries no information, so it is removed and the value is read as the digit
+        // string it is — every legal reading is offered, never one that was silently re-cut.
+        val parsed = ok("68180\u200B613\u200B07")
+        assertEquals("6818061307", parsed.digits)
+        assertEquals(listOf("6818-0613-07", "68180-613-07", "68180-6130-7"), parsed.candidates.map { it.value })
+
+        // A zero-width space inside a segment (what wrapping a value across lines leaves behind) is dropped
+        // too, so the code still reads exactly as it is printed.
+        assertEquals(listOf("68180-613-07"), values("68180-61\u200B3-07"))
+    }
 }

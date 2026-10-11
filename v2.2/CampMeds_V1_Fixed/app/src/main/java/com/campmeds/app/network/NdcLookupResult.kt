@@ -31,7 +31,13 @@ sealed class NdcLookupResult {
         val form: String,
         val isPackage: Boolean,
         val ambiguousInput: Boolean = false,
-        val alternatives: List<String> = emptyList()
+        val alternatives: List<String> = emptyList(),
+        /**
+         * Readings of the typed number that openFDA could not be asked about (it answered 5xx/429 or the
+         * request failed). Empty in the normal case; when it is not empty, the screen must say so, because
+         * the number still has more than one possible reading and only the listed one was actually checked.
+         */
+        val uncheckedReadings: List<String> = emptyList()
     ) : NdcLookupResult()
 
     object NotFound : NdcLookupResult()

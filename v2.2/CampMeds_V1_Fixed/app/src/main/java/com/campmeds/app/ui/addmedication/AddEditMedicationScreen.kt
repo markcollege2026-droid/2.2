@@ -255,6 +255,16 @@ fun AddEditMedicationScreen(
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                        if (result.uncheckedReadings.isNotEmpty()) {
+                            Text(
+                                "⚠️ openFDA did not answer for another reading of this number (" +
+                                    result.uncheckedReadings.joinToString(", ") +
+                                    "), so it could not be checked. Type the NDC with its dashes exactly as " +
+                                    "printed on the label and look it up again before saving.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
                 is NdcLookupResult.NotFound -> Text(
