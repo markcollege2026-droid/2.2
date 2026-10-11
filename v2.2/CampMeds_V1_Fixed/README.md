@@ -31,6 +31,53 @@ Built on top of V1 Fixed (same architecture, folders and Gradle setup). **Not co
 * First name is required, last name optional. Duplicate sheet names get ` (2)`, ` (3)` because Excel forbids duplicates.
 * Deleted patients are not browsable in-app (their history is in the export); a patient-QR scan works from the dashboard's in-app scanner only (no phone-camera deep link).
 
+## Update 2 — patients first, per-medication settings, named administration times, prepackaged groups, scanner + NDC
+
+Built on top of Update 1.1 (same architecture, folders, Gradle setup, one local encrypted database, no
+backend). **Compiled and unit-tested by CI (see "Verification status" below); the instrumented tests are
+written but were not executed here — no device or emulator was available.**
+
+| # | Change | Where |
+|---|---|---|
+| 1 | The home screen lists **patients** only (name + "N due"), never medication names. Tapping a patient opens that patient's currently due medications, which is where a dose is selected and administered. A patient stays listed while anything is still due, disappears when nothing is, and a patient with medications due only later today never appears. | `ui/duetoday/TodaysDueScreen.kt`, `ui/duetoday/PatientDueScreen.kt`, `ui/duetoday/DueDoseItem.kt` (`dueEntriesForPatient`) |
+| 2 | Per-medication toggle **"Require QR scan when selecting this medication."** On = the existing scan-first workflow; off = tapping the medication goes straight to the verification/outcome step. Saved per medication, survives restarts; existing records default to on (nothing changes for them). | `data/entity/Medication.kt` (`requireQrScan`), `ui/addmedication/AddEditMedicationScreen.kt`, `ui/duetoday/PatientDueScreen.kt` (`DoseActionSheet`) |
+| 3 | Administrator-managed **named administration times** (name + real time, Material 3 time picker) and a medication form that picks from them instead of typing times. Custom times remain possible, so existing medications and camps with no configured names keep working. | `data/entity/AdministrationTime.kt`, `data/dao/AdministrationTimeDao.kt`, `domain/AdministrationTimeRules.kt`, `ui/settings/SettingsScreen.kt`, `ui/addmedication/AddEditMedicationScreen.kt` |
+| 4 | **Prepackaged medication groups** (`isGroupAdministered` + `prepackagedGroupId`, per medication, same patient only) and **one-action group administration**: the sheet lists every member, states what will happen to each, and a single "Given" records one administration record per due medication dose. Undue, already-recorded and unticked medications are never touched, and a second tap cannot duplicate or overwrite. | `domain/PrepackagedGroups.kt`, `repository/CampMedsRepository.kt` (`recordGroupAdministration`), `ui/duetoday/PatientDueScreen.kt` (`GroupAdministrationSheet`, `planGroupMembers`) |
+| 5 | **"Can't scan — verify manually"** moved to the top of the scanner screen with a contrasting amber background, above the camera preview (not over it), inside a scrollable sheet so it stays usable on small screens. Same behaviour as before: skip the scan, verify by eye, safeguards intact. | `ui/duetoday/PatientDueScreen.kt` (`CanNotScanButton`) |
+| 6 | **NDC handling for every valid format**: 10-digit products (4-4, 5-3), 10-digit packages (4-4-2, 5-3-2, 5-4-1), the 11-digit billing format (5-4-2) hyphenated or not, spaces instead of dashes, and 9-digit billing product codes. The padding zero is removed from (or added to) exactly the segment that carries it — never from the whole number — and unhyphenated input is searched in every legal reading so it can never silently resolve to the wrong split. | `domain/NdcNormalizer.kt`, `network/NdcApiClient.kt`, `network/NdcLookupResult.kt` |
+| 7 | Lookup outcomes are now distinct: record found (with the directory NDC and the 11-digit billing form to check against the label), no record, **ambiguous** (more than one product matched — never guessed), invalid input, network failure, API failure. Manual entry (empty NDC, no placeholder) stays available in every case. | `ui/addmedication/AddEditMedicationScreen.kt`, `network/NdcLookupResult.kt` |
+| 8 | Tests: NDC format coverage (arrangements, billing conversion, ambiguity, invalid input), API client behaviour (query construction, parsing, failures), named-time rules (build/retime/detach/validate), prepackaged rules, and group administration. | `app/src/test/java/com/campmeds/app/...` |
+
+### Database migration 2 -> 3 (`data/Migrations.kt`)
+
+`MIGRATION_2_3` re-creates `medications` with the four new columns and creates `administration_times`
+(+ unique name index). No destructive fallback is used and no row is dropped. Defaults for existing data:
+`administrationTimeIds = ''` (every existing time is a custom time), `requireQrScan = 1` (scanning still
+required), `isGroupAdministered = 0`, `prepackagedGroupId = NULL` (nothing grouped). `MigrationTest` now
+migrates 1 → 2 → 3, validates the schema and asserts that the existing rows, the RESTRICT foreign key and the
+dose history all survive.
+
+### Rules worth knowing
+
+* **Changing a named time** (e.g. Breakfast 08:00 → 08:30) asks for confirmation, then moves exactly the
+  scheduled times that reference that entry on current medications. DoseLogs are never rewritten — history
+  keeps the time each dose was scheduled for.
+* **Removing a named time** asks for confirmation, keeps every scheduled time and turns it into a custom
+  time. No dose can be lost or silently moved to another entry.
+* **Renaming** an entry only relabels the medications that use it; no schedule changes.
+* **A group action** covers only doses that are due right now; a later dose, a held/refused one or an unticked
+  medication is listed for transparency but recorded separately (or not at all).
+* **A group is never created automatically** and never spans patients (enforced in the form, in
+  `PrepackagedGroups.validate` and again in `CampMedsRepository.saveMedicationEdit`).
+
+### Verification status
+
+GitHub Actions (`.github/workflows/blank.yml`) runs `testDebugUnitTest`, compiles the instrumented tests and
+assembles the debug APK on every push to `main`/`master` and on pull requests. The unit tests named above are
+executed there. The instrumented tests (`MigrationTest`, `GroupAndScheduleIntegrityTest`,
+`HistoryIntegrityTest`, `DatabasePersistenceTest`) need a device/emulator and were **not** run in this
+environment.
+
 ## What "V1 Fixed" is
 
 The original V1 prototype plus **only** the concrete bug fixes below. No V2 functionality is included

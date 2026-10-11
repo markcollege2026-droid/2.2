@@ -33,8 +33,22 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+
+      - name: Compile instrumented tests
+        run: ./gradlew assembleDebugAndroidTest
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: campmeds-test-reports
+          path: v2.2/CampMeds_V1_Fixed/app/build/reports/tests
+          if-no-files-found: ignore
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
