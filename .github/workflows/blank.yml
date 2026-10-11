@@ -14,6 +14,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      checks: write
 
     defaults:
       run:
@@ -54,10 +55,13 @@ jobs:
           set -eo pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
 
-      # The Gradle output is published as a job summary and as error annotations, both of which can be read
-      # back through the Actions API even where artifact and log downloads are unavailable.
+      # The Gradle output is published as a job summary, as error annotations and as a check run of its own:
+      # all three can be read back through the Actions API even where artifact and log downloads are not
+      # reachable from the machine that is reviewing the build.
       - name: Publish Gradle output on failure
         if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           {
             echo "Gradle output (tail) for ${{ github.sha }}"
@@ -67,15 +71,36 @@ jobs:
           } > failure-report.md
           cat failure-report.md >> "$GITHUB_STEP_SUMMARY"
 
+          # A single annotation survives per step, so it carries the very end of the log (where the failure is).
           python3 - <<'PY'
           import os
 
           path = "gradle-output.log"
+          text = open(path, encoding="utf-8", errors="replace").read() if os.path.exists(path) else "gradle-output.log missing"
+          escaped = text[-3800:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print("::error title=Gradle output (tail)::{0}".format(escaped))
+          PY
+
+          # The full tail goes into a check run, whose output has a much larger limit.
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          path = "gradle-output.log"
           text = open(path, encoding="utf-8", errors="replace").read()[-60000:] if os.path.exists(path) else "gradle-output.log missing"
-          escaped = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-          chunk = 45000
-          for index, start in enumerate(range(0, len(escaped), chunk)):
-              print("::error title=Gradle output part {0}::{1}".format(index + 1, escaped[start:start + chunk]))
+          payload = {
+              "name": "gradle-output",
+              "head_sha": os.environ.get("GITHUB_SHA", ""),
+              "status": "completed",
+              "conclusion": "failure",
+              "output": {"title": "Gradle output (tail)", "summary": text},
+          }
+          subprocess.run(
+              ["gh", "api", "-X", "POST", "repos/{0}/check-runs".format(os.environ.get("GITHUB_REPOSITORY", "")), "--input", "-"],
+              input=json.dumps(payload).encode("utf-8"),
+              check=False,
+          )
           PY
 
       - name: Upload test reports
