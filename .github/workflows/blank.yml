@@ -65,7 +65,9 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           working-directory: v2.2/CampMeds_V1_Fixed
-          script: bash -e -o pipefail -c './gradlew connectedDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log'
+          # Kept to one line: the action runs each line of `script` through sh separately. The script waits
+          # for the device to finish booting and retries once if the runner cannot reach the emulator at all.
+          script: bash ci/run-instrumented-tests.sh
 
       - name: Build Debug APK
         run: |
