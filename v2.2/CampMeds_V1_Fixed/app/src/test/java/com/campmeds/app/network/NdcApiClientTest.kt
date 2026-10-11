@@ -74,15 +74,15 @@ class NdcApiClientTest {
 
         val result = client.lookup("0069-2587-68")
 
-        assertTrue(result is NdcLookupResult.Found)
-        result as NdcLookupResult.Found
-        assertEquals("0069-2587-68", result.ndc)
-        assertEquals("0069-2587-68", result.matchedNdc)
-        assertEquals("Zyrtec", result.name)
-        assertEquals("10 mg/1", result.strength)
-        assertEquals("TABLET", result.form)
-        assertTrue(result.isPackage)
-        assertFalse(result.ambiguousInput)
+        assertTrue("expected a match, got $result", result is NdcLookupResult.Found)
+        val found = result as NdcLookupResult.Found
+        assertEquals("0069-2587-68", found.ndc)
+        assertEquals("0069-2587-68", found.matchedNdc)
+        assertEquals("Zyrtec", found.name)
+        assertEquals("10 mg/1", found.strength)
+        assertEquals("TABLET", found.form)
+        assertTrue(found.isPackage)
+        assertFalse(found.ambiguousInput)
         assertEquals(1, seen.size)
     }
 
@@ -149,10 +149,10 @@ class NdcApiClientTest {
 
         val result = client.lookup("0069258768")
 
-        assertTrue(result is NdcLookupResult.Ambiguous)
-        result as NdcLookupResult.Ambiguous
-        assertEquals(listOf("0069-2587-68", "00692-587-68"), result.interpretations)
-        assertEquals(listOf("0069-2587", "00692-587"), result.products)
+        assertTrue("expected ambiguity, got $result", result is NdcLookupResult.Ambiguous)
+        val ambiguous = result as NdcLookupResult.Ambiguous
+        assertEquals(listOf("0069-2587-68", "00692-587-68"), ambiguous.interpretations)
+        assertEquals(listOf("0069-2587", "00692-587"), ambiguous.products)
         assertEquals(3, seen.size) // all three readings were checked
     }
 

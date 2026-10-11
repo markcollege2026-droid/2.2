@@ -33,14 +33,40 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # Every Gradle run appends to gradle-output.log so the failure step below can publish it: the log and
+      # artifact download endpoints are not reachable from every environment, but the API is.
       - name: Run unit tests
-        run: ./gradlew testDebugUnitTest
+        run: |
+          set -eo pipefail
+          ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a gradle-output.log
 
       - name: Compile instrumented tests
-        run: ./gradlew assembleDebugAndroidTest
+        run: |
+          set -eo pipefail
+          ./gradlew assembleDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: |
+          set -eo pipefail
+          ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
+
+      - name: Publish Gradle output on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Gradle output (tail) for ${{ github.sha }}:"
+            echo '```'
+            tail -c 40000 gradle-output.log 2>/dev/null || echo "gradle-output.log not found"
+            echo '```'
+          } > failure-report.md
+          PR="${{ github.event.pull_request.number }}"
+          if [ -n "$PR" ]; then
+            gh pr comment "$PR" --body-file failure-report.md
+          else
+            gh api "repos/${{ github.repository }}/issues" -f title="Build failure ${{ github.sha }}" -F body=@failure-report.md > /dev/null
+          fi
 
       - name: Upload test reports
         if: always()

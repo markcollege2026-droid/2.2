@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.campmeds.app.data.AppDatabase
-import com.campmeds.app.data.entity.AdministrationTime
 import com.campmeds.app.data.entity.DoseStatus
 import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Patient
