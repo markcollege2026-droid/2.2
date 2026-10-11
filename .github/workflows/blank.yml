@@ -145,18 +145,20 @@ jobs:
                       root = ET.parse(path).getroot()
                   except Exception:
                       continue
-                  tests += int(root.get("tests") or 0)
-                  failures += int(root.get("failures") or 0)
-                  errors += int(root.get("errors") or 0)
-                  skipped += int(root.get("skipped") or 0)
-              if files:
+                  # AGP writes either <testsuite> or a <testsuites> wrapper depending on the task.
+                  for suite in root.iter("testsuite"):
+                      tests += int(suite.get("tests") or 0)
+                      failures += int(suite.get("failures") or 0)
+                      errors += int(suite.get("errors") or 0)
+                      skipped += int(suite.get("skipped") or 0)
+              if not files:
+                  print("::notice title={0}::not run in this build".format(label))
+              else:
                   print(
-                      "::notice title={0}::{1} passed, {2} failed, {3} errored, {4} skipped".format(
-                          label, tests - failures - errors - skipped, failures, errors, skipped
+                      "::notice title={0}::{1} passed, {2} failed, {3} errored, {4} skipped ({5} result file(s))".format(
+                          label, tests - failures - errors - skipped, failures, errors, skipped, len(files)
                       )
                   )
-              else:
-                  print("::notice title={0}::not run in this build".format(label))
           PY
 
       - name: Upload test reports
