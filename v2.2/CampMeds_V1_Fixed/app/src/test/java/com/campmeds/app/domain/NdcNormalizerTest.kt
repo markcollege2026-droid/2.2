@@ -210,6 +210,20 @@ class NdcNormalizerTest {
     }
 
     @Test
+    fun aNineDigitThreeSegmentCodeSaysHowManyDigitsItHas() {
+        // Reported code 0093-025-01: 4-3-2 is 9 digits, so it is one digit short of any NDC (10, or 11 in the
+        // billing format). Naming the arrangement without the digit count left the user guessing which part
+        // was wrong; the count is what says "a digit is missing".
+        val bad = invalid("0093-025-01")
+
+        assertTrue(bad.message.contains("4-3-2"))
+        assertTrue(bad.message.contains("9 digits"))
+        assertTrue(bad.message.contains("missing or extra digit"))
+        // And it is never searched in a "repaired" form: nothing is guessed on the user's behalf.
+        assertTrue(NdcNormalizer.candidates("0093-025-01").isEmpty())
+    }
+
+    @Test
     fun nineDigitNumberThatIsNotABillingProductCodeIsRejected() {
         // "123456789" cannot be read as 5-4 with a padding zero (no segment starts with 0).
         assertTrue(invalid("123456789").message.contains("billing product code"))

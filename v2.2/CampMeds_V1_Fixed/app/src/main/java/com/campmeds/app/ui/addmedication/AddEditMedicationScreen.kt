@@ -267,10 +267,21 @@ fun AddEditMedicationScreen(
                         }
                     }
                 }
-                is NdcLookupResult.NotFound -> Text(
-                    "No record in the FDA NDC Directory for this number. Check the digits, or use Manual entry below.",
-                    color = MaterialTheme.colorScheme.error
-                )
+                is NdcLookupResult.NotFound -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "No record in the FDA NDC Directory for this number. Check the digits, or use Manual " +
+                            "entry below.",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    // What was searched and what could not be: the answer to "why did this one fail?".
+                    result.notes.forEach { note ->
+                        Text(
+                            note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 is NdcLookupResult.Ambiguous -> Text(
                     "This number matches more than one product (${result.products.joinToString(", ")}), so it was not " +
                         "guessed. Enter the NDC with its dashes exactly as printed on the label.",

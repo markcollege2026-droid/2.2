@@ -77,6 +77,30 @@ dose history all survive.
   "lookup failed", and it is never reported as "no such record" either. (This is what made 5-3-2 codes such
   as `68180-613-07` come back as a lookup failure when typed without dashes.)
 
+### Codes that come back with no record — checked against the live directory
+
+The NDC Directory lists currently-listed products, in the 10-digit form, with each segment at its assigned
+width. Three codes reported from a camp list were looked up by hand; none of them has a record, and the
+reasons differ:
+
+| Code as typed | Shape | What the directory says | Why |
+|---|---|---|---|
+| `68180-252-01` | 5-3-2 (legal) | no package `68180-252-01`, no product `68180-252`, and nothing under `68180-25*` at all; the other readings of those digits (`6818-0252-01`, `68180-2520-1`) are absent too, as is the billing sibling `68180-0252-1` | the digits do not exist for that labeler (Lupin's products run `68180-1xx` upwards) — a wrong digit, or a withdrawn product |
+| `0093-025-01` | 4-3-2 — **9 digits** | never searched: 9 digits cannot be an NDC (10, or 11 in the billing format) | a digit is missing or extra; no completion matches a current record either — `0093-0025-01`, `00930-025-01` and `0093-0250-01` are all absent |
+| `00904-617-10` | 5-3-2 (legal) | no labeler `00904` exists at all; labeler `0904` (Major Pharmaceuticals) does, and its only `0904-61*` product is `0904-6172` (carbamazepine 200 mg, packages `-50` and `-61`) | the labeler carries the **padding zero of the 11-digit billing format** (`00904-6172-50` is the billing form of `0904-6172-50`); the digits as typed match no record |
+
+Two directory facts behind those results, both verified by hand against the API:
+
+* 11-digit billing values are **not** stored: `packaging.package_ndc:"00069-2587-68"` finds nothing while
+  `0069-2587-68` (Zyrtec) is there — a billing code is only ever found through the conversion the app does.
+* Labelers are stored at their assigned width: `product_ndc:0093-*` (Teva) returns 385 products, while
+  `product_ndc:00093-*` (the same labeler, zero-padded) returns none.
+
+So "no record" is usually a formatting or transcription problem, not a missing drug. A lookup that finds
+nothing now says which value was searched, which other readings of the same digits exist (when the dashes as
+typed kept them from being searched), and whether the code looks like it carries billing padding. It still
+searches only what was typed, and never substitutes another code silently.
+
 ### Verification status
 
 GitHub Actions (`.github/workflows/blank.yml`) runs on every push to `main`/`master` and on pull requests, and

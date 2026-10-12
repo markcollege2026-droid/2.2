@@ -40,7 +40,18 @@ sealed class NdcLookupResult {
         val uncheckedReadings: List<String> = emptyList()
     ) : NdcLookupResult()
 
-    object NotFound : NdcLookupResult()
+    /**
+     * A code with a legal shape that the directory has no record for.
+     *
+     * [notes] are the things that help the user work out why, in order of usefulness:
+     *  - which value was actually searched (a product code or a package code, dashed);
+     *  - the other legal readings of the same digits, when the grouping that was typed meant they could not
+     *    be searched;
+     *  - a detectable formatting problem, such as the padding zero of the 11-digit billing format.
+     * They are notes, never corrections: nothing here changes which code was looked up, and no other code is
+     * ever substituted silently.
+     */
+    data class NotFound(val notes: List<String> = emptyList()) : NdcLookupResult()
 
     /** [interpretations] are the readings that were searched, [products] the distinct product NDCs found. */
     data class Ambiguous(

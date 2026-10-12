@@ -88,7 +88,7 @@ class NdcApiClient(
         if (matches.isEmpty()) {
             // Nothing matched at all. A request that failed is reported as a failure — never as "no such
             // record", because the directory never actually answered for that number.
-            return@withContext failure ?: NdcLookupResult.NotFound
+            return@withContext failure ?: NdcLookupResult.NotFound(notFoundNotes(parsed))
         }
 
         val products = matches.values.map { it.productNdc }.distinct()
@@ -112,6 +112,43 @@ class NdcApiClient(
             alternatives = parsed.candidates.map { it.value }.filter { it != matchedValue },
             uncheckedReadings = unchecked
         )
+    }
+
+    /**
+     * Why a code with a legal shape can still have no record — the parts the user can act on. Built only from
+     * what was typed, so it can never send anyone to a code the app made up.
+     */
+    private fun notFoundNotes(parsed: NdcNormalizer.Parsed.Ok): List<String> {
+        val notes = mutableListOf<String>()
+
+        val searched = parsed.candidates.joinToString(", ") { candidate ->
+            (if (candidate.isPackage) "package " else "product ") + candidate.value
+        }
+        notes += "Searched the FDA NDC Directory for $searched — no record."
+
+        // The digits of an undashed number are searched in every legal reading, so this only says something
+        // new when the dashes the user typed pinned the grouping down to one of those readings.
+        val typed = parsed.candidates.map { it.value }.toSet()
+        val otherReadings = NdcNormalizer.candidates(parsed.digits)
+            .map { it.value }
+            .filter { it !in typed }
+            .distinct()
+        if (otherReadings.isNotEmpty()) {
+            notes += "The same digits (${parsed.digits}) also read as ${otherReadings.joinToString(", ")}. " +
+                "Only the grouping as typed was searched — if the carton shows one of those, enter it."
+        }
+
+        // "00904-617-10": a 5-digit labeler that starts with 0 is the padding of the 11-digit billing format,
+        // not an assigned labeler code (the directory has no product under a labeler like that).
+        val labeler = parsed.candidates.firstOrNull()?.value?.substringBefore('-').orEmpty()
+        if (labeler.length == 5 && labeler.startsWith("0")) {
+            notes += "The labeler segment \"$labeler\" starts with 0. A zero-leading 5-digit labeler is the " +
+                "padding of the 11-digit billing format; the directory stores the labeler without it " +
+                "(\"${labeler.substring(1)}\", not \"$labeler\"). Type the NDC exactly as the carton prints " +
+                "it: 10 digits, or all 11 with the zero."
+        }
+
+        return notes
     }
 
     private sealed class QueryOutcome {

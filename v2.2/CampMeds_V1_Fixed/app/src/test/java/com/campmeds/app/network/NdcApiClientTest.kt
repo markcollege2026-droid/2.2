@@ -192,19 +192,17 @@ class NdcApiClientTest {
 
     @Test
     fun noRecordIsNotFoundNotAnError() = runBlocking {
-        val result = client({ 404 to """{"error":{"code":"NOT_FOUND"}}""" }).lookup("0069-2587")
-        assertEquals(NdcLookupResult.NotFound, result)
+        val result = client({ 404 to notFound }).lookup("0069-2587")
+        assertTrue("expected NotFound, got $result", result is NdcLookupResult.NotFound)
     }
 
     @Test
     fun errorObjectWith200AndEmptyResultsBothMeanNotFound() = runBlocking {
-        assertEquals(
-            NdcLookupResult.NotFound,
-            client({ 200 to """{"error":{"code":"NOT_FOUND","message":"No matches found!"}}""" }).lookup("0069-2587")
+        assertTrue(
+            client({ 200 to notFound }).lookup("0069-2587") is NdcLookupResult.NotFound
         )
-        assertEquals(
-            NdcLookupResult.NotFound,
-            client({ 200 to """{"meta":{},"results":[]}""" }).lookup("0069-2587")
+        assertTrue(
+            client({ 200 to """{"meta":{},"results":[]}""" }).lookup("0069-2587") is NdcLookupResult.NotFound
         )
     }
 
@@ -270,6 +268,63 @@ class NdcApiClientTest {
         assertEquals("0069-2587-68", found.matchedNdc)
         assertEquals(listOf("00692-587-68", "00692-5876-8"), found.uncheckedReadings)
         assertEquals(5, seen.size) // the match, plus the two failing readings tried twice each
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // "No record" has to say why: the reported codes 68180-252-01, 0093-025-01 and 00904-617-10
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    fun aNoRecordNoteNamesTheValueThatWasSearched() = runBlocking {
+        // Reported code 68180-252-01: a legal 5-3-2 package shape that the directory has no record for.
+        val result = client({ 404 to notFound }).lookup("68180-252-01") as NdcLookupResult.NotFound
+
+        assertEquals(2, result.notes.size) // the search note, plus the other-readings note
+        assertTrue(result.notes.first().contains("package 68180-252-01"))
+    }
+
+    @Test
+    fun aDashedCodeThatDoesNotMatchNamesTheReadingsItDidNotSearch() = runBlocking {
+        // The dashes pinned the grouping to 5-3-2, so the 4-4-2 and 5-4-1 readings of the same digits were
+        // never asked about. Saying which ones they are is the difference between "no record" and a dead end.
+        val result = client({ 404 to notFound }).lookup("68180-252-01") as NdcLookupResult.NotFound
+
+        val readings = result.notes.single { it.startsWith("The same digits") }
+        assertTrue(readings.contains("6818025201"))
+        assertTrue(readings.contains("6818-0252-01"))
+        assertTrue(readings.contains("68180-2520-1"))
+    }
+
+    @Test
+    fun anUnhyphenatedCodeIsNotToldAboutReadingsThatWereAlreadySearched() = runBlocking {
+        val seen = mutableListOf<String>()
+        val result = client({ 404 to notFound }, seen).lookup("6818025201") as NdcLookupResult.NotFound
+
+        assertEquals(3, seen.size) // all three readings were searched
+        assertTrue(result.notes.none { it.startsWith("The same digits") })
+    }
+
+    @Test
+    fun aZeroLeadingFiveDigitLabelerIsExplainedAsBillingPadding() = runBlocking {
+        // Reported code 00904-617-10: there is no labeler "00904"; Major Pharmaceuticals' labeler is "0904"
+        // and its only product starting 0904-61 is 0904-6172 (carbamazepine).
+        val result = client({ 404 to notFound }).lookup("00904-617-10") as NdcLookupResult.NotFound
+
+        val padding = result.notes.single { it.contains("padding") }
+        assertTrue(padding.contains("\"00904\""))
+        assertTrue(padding.contains("\"0904\""))
+        assertTrue(padding.contains("11-digit billing"))
+    }
+
+    @Test
+    fun notesAreNeverAReasonToSearchSomethingElse() = runBlocking {
+        // Whatever the notes say, the client asked about exactly the value that was typed.
+        val seen = mutableListOf<String>()
+        client({ 404 to notFound }, seen).lookup("00904-617-10")
+
+        assertEquals(1, seen.size)
+        assertTrue(seen.single().contains("package_ndc"))
+        assertTrue(seen.single().contains("00904-617-10"))
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -182,8 +182,9 @@ object NdcNormalizer {
         }
 
         return Parsed.Invalid(
-            "That segment arrangement (${shape.joinToString("-")}) is not a recognised NDC format. " +
-                "A 10-digit NDC is 4-4-2, 5-3-2 or 5-4-1; an 11-digit billing code is 5-4-2. $HELP"
+            "That segment arrangement (${shape.joinToString("-")}) has ${digits.length} digits, which is not " +
+                "a recognised NDC format. A 10-digit NDC is 4-4-2, 5-3-2 or 5-4-1; an 11-digit billing code " +
+                "is 5-4-2. Check for a missing or extra digit. $HELP"
         )
     }
 
