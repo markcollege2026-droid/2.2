@@ -416,8 +416,16 @@ private fun MedicationScanStep(
                 }
             }
             // Second, always-visible choice for manual entry while the camera is working.
-            OutlinedButton(onClick = onScanSkipped, modifier = Modifier.fillMaxWidth()) {
-                Text("Enter manually instead of scanning")
+            // Solid, opaque background so it never reads as a transparent overlay on the camera or sheet.
+            Button(
+                onClick = onScanSkipped,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Enter manually instead of scanning", fontWeight = FontWeight.SemiBold)
             }
         }
     }
