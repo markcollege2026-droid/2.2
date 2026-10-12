@@ -9,14 +9,24 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -86,7 +96,9 @@ fun OcrCaptureSheet(
 
     LaunchedEffect(Unit) { OcrTempFiles.sweepStale(context) }
 
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
+        sheetState = sheetState,
         onDismissRequest = {
             job?.cancel()
             onDismiss()
@@ -134,18 +146,27 @@ fun OcrCaptureSheet(
                     cameraError?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     } ?: Text(
-                        "Hold the label flat and steady, in good light, then take the photo. The photo is read on this " +
-                            "device and deleted afterwards.",
+                        "Hold the label flat and steady, in good light, then tap the round button. The photo is read " +
+                            "on this device and deleted afterwards.",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    key(attempt) {
-                        CapturePreview(
-                            imageCapture = imageCapture,
-                            onCameraError = { cameraError = it }
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
+                    // The camera fills this box and the round shutter sits over its bottom edge, lifted above the
+                    // system navigation bar (home / back) so those buttons can never cover it.
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(460.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black)
+                    ) {
+                        key(attempt) {
+                            CapturePreview(
+                                imageCapture = imageCapture,
+                                onCameraError = { cameraError = it },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        ShutterButton(
                             enabled = cameraError == null,
                             onClick = {
                                 val file = OcrTempFiles.newFile(context)
@@ -179,19 +200,50 @@ fun OcrCaptureSheet(
                                         }
                                     }
                                 )
-                            }
-                        ) { Text("Take photo") }
-                        TextButton(onClick = onDismiss) { Text("Cancel") }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                                .padding(bottom = 16.dp)
+                        )
                     }
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.align(Alignment.End).navigationBarsPadding()
+                    ) { Text("Cancel") }
                 }
             }
         }
     }
 }
 
+/**
+ * The round shutter used by standard camera apps: a white ring around a white disc. Grey and inert when the
+ * camera is unavailable.
+ */
+@Composable
+private fun ShutterButton(enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(80.dp)
+            .clip(CircleShape)
+            .border(4.dp, Color.White, CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Take photo" },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(if (enabled) Color.White else Color.Gray)
+        )
+    }
+}
+
 /** Live preview bound to the back camera together with the still-capture use case. */
 @Composable
-private fun CapturePreview(imageCapture: ImageCapture, onCameraError: (String) -> Unit) {
+private fun CapturePreview(imageCapture: ImageCapture, onCameraError: (String) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
@@ -221,8 +273,5 @@ private fun CapturePreview(imageCapture: ImageCapture, onCameraError: (String) -
         onDispose { runCatching { future.get().unbindAll() } }
     }
 
-    AndroidView(
-        factory = { previewView },
-        modifier = Modifier.fillMaxWidth().height(260.dp)
-    )
+    AndroidView(factory = { previewView }, modifier = modifier)
 }
