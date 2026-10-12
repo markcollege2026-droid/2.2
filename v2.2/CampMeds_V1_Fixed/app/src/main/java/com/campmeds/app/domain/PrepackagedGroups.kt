@@ -16,7 +16,10 @@ import java.util.UUID
 object PrepackagedGroups {
 
     /** One prepackaged group and its member medications (all of the same patient). */
-    data class Group(val id: String, val members: List<Medication>) {
+    data class Group(val id: String, val members: List<Medication>, val name: String? = null) {
+        /** The typed group name when there is one, otherwise the member list. */
+        val displayName: String get() = name ?: detailLabel
+
         /** Human label used in dropdowns and cards, e.g. "Zyrtec + Flonase". */
         val label: String get() = members.joinToString(" + ") { it.name }
 
@@ -36,10 +39,10 @@ object PrepackagedGroups {
      * looking like the same choice twice.
      */
     fun pickerEntries(groups: List<Group>, currentGroupId: String?): List<PickerEntry> {
-        val counts = groups.groupingBy { it.detailLabel }.eachCount()
+        val counts = groups.groupingBy { it.displayName }.eachCount()
         val seen = mutableMapOf<String, Int>()
         return groups.map { group ->
-            val base = group.detailLabel
+            val base = group.displayName
             val n = (seen[base] ?: 0) + 1
             seen[base] = n
             val text = if ((counts[base] ?: 0) > 1) "$base (group $n)" else base
@@ -62,7 +65,13 @@ object PrepackagedGroups {
             !it.isArchived && it.isGroupAdministered && !it.prepackagedGroupId.isNullOrBlank() && it.patientId == patientId
         }
             .groupBy { it.prepackagedGroupId!! }
-            .map { (id, members) -> Group(id, members.sortedBy { it.name.lowercase() }) }
+            .map { (id, members) ->
+                Group(
+                    id,
+                    members.sortedBy { it.name.lowercase() },
+                    members.firstNotNullOfOrNull { it.prepackagedGroupName?.trim()?.takeIf { n -> n.isNotEmpty() } }
+                )
+            }
             .sortedBy { it.label.lowercase() }
 
     /**

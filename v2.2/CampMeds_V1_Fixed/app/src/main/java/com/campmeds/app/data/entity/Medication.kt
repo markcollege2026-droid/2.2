@@ -69,6 +69,8 @@ data class Medication(
 
     /** Identifier shared by the medications of one prepackaged group (see [isGroupAdministered]). */
     val prepackagedGroupId: String? = null,
+    /** Name typed for the group on the form (prefilled from the administration time). Null when unnamed. */
+    val prepackagedGroupName: String? = null,
 
     /** "What is this medication for?" Shown only on the patient's details screen, never when dosing. */
     val purpose: String? = null,

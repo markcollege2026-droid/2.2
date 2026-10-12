@@ -21,7 +21,7 @@ import net.sqlcipher.database.SupportFactory
 
 @Database(
     entities = [Patient::class, Medication::class, DoseLog::class, User::class, AdministrationTime::class],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -61,7 +61,7 @@ abstract class AppDatabase : RoomDatabase() {
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory) // <-- this is what makes the DB file SQLCipher-encrypted
                 // Real, data-preserving migrations only. There is deliberately NO destructive fallback.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
         }
     }

@@ -137,3 +137,13 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         )
     }
 }
+
+/**
+ * Adds the optional group name to medications. Nothing is rebuilt and no row is changed: existing groups
+ * simply start unnamed (null) and keep working exactly as before.
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `medications` ADD COLUMN `prepackagedGroupName` TEXT")
+    }
+}

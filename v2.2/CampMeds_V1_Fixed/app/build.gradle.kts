@@ -94,6 +94,8 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // On-device OCR. The Latin model is bundled in the APK (no runtime download, works offline).
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Printing a QR label bitmap through the system print dialog
     implementation("androidx.print:print:1.0.0")

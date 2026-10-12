@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.campmeds.app.data.AppDatabase
 import com.campmeds.app.data.MIGRATION_1_2
 import com.campmeds.app.data.MIGRATION_2_3
+import com.campmeds.app.data.MIGRATION_3_4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -132,5 +133,23 @@ class MigrationTest {
         db.query("SELECT COUNT(*) FROM dose_logs").use { c ->
             assertTrue(c.moveToNext()); assertEquals(1, c.getInt(0))
         }
+    }
+
+    @Test
+    fun migrate3To4_addsNullableGroupNameAndKeepsExistingRows() {
+        v1Data()
+        helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3).close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_3_4)
+
+        db.query("SELECT COUNT(*) FROM medications").use { c ->
+            c.moveToFirst()
+            org.junit.Assert.assertEquals(1, c.getInt(0))
+        }
+        db.query("SELECT prepackagedGroupName FROM medications WHERE id = 'm1'").use { c ->
+            c.moveToFirst()
+            org.junit.Assert.assertTrue(c.isNull(0))
+        }
+        db.close()
     }
 }

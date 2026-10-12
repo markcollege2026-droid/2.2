@@ -114,11 +114,20 @@ class CampMedsRepository(
             db.withTransaction {
                 db.medicationDao().archive(existing.id)
                 db.medicationDao().upsert(replacement)
+                syncGroupName(replacement)
             }
             return replacement
         }
         db.medicationDao().upsert(updated)
+        syncGroupName(updated)
         return updated
+    }
+
+    /** Keeps one name per group: the name saved on any member is written to all current members. */
+    private suspend fun syncGroupName(medication: Medication) {
+        val groupId = medication.prepackagedGroupId ?: return
+        if (!medication.isGroupAdministered) return
+        db.medicationDao().setGroupName(groupId, medication.patientId, medication.prepackagedGroupName)
     }
 
     /** "Deletes" a medication by archiving it. Its dose history is untouched. */
