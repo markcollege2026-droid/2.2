@@ -31,7 +31,7 @@ import java.io.File
 import java.util.UUID
 
 /** Temporary photos live only in the app's private cache directory. */
-internal object OcrTempFiles {
+object OcrTempFiles {
     private const val DIR = "ocr"
     private const val STALE_MILLIS = 60L * 60L * 1000L
 
