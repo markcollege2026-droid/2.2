@@ -55,7 +55,7 @@ class MigrationTest {
     fun migrate1To2To3_keepsAllDataAndAddsSafeDefaults() {
         v1Data()
 
-        val db = helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3)
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         // ---- patients (v1 -> v2 backfill still applied) ----
         db.query("SELECT id, name, firstName, lastName, notes, conditions, isArchived FROM patients ORDER BY id").use { c ->
@@ -119,7 +119,7 @@ class MigrationTest {
             execSQL("INSERT INTO dose_logs (id,medicationId,scheduledFor,status,loggedAt,wasOverride) VALUES ('d1','m1','2026-07-02T08:00','GIVEN','2026-07-02T08:01',0)")
             close()
         }
-        val db = helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3)
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
         db.execSQL("PRAGMA foreign_keys = ON")
 
         // Deleting a patient that still has medications is refused (RESTRICT) instead of cascading.
@@ -136,11 +136,13 @@ class MigrationTest {
     }
 
     @Test
-    fun migrate3To4_addsNullableGroupNameAndKeepsExistingRows() {
+    fun migrateToCurrent_addsNullableGroupNameAndKeepsExistingRows() {
+        // Room only exports the schema of the current version, so this migrates straight to it and validates
+        // against the exported current schema; the new column must exist, be null for existing rows, and no row
+        // may be lost.
         v1Data()
-        helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3).close()
 
-        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_3_4)
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         db.query("SELECT COUNT(*) FROM medications").use { c ->
             c.moveToFirst()
