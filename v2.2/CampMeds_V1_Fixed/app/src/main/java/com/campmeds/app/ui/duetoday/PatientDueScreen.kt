@@ -1,10 +1,14 @@
 package com.campmeds.app.ui.duetoday
 
 import android.Manifest
+import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -317,9 +321,29 @@ private fun CanNotScanButton(onClick: () -> Unit) {
     }
 }
 
-/** Camera permission + live preview, shared by the dosing sheet and the group sheet. */
+/**
+ * The scanner screen for a medication that requires a QR scan: the "Can't scan — verify manually" control
+ * first (contrasting amber, full width, at the top), then whatever the camera is actually doing.
+ *
+ * The control is rendered here, unconditionally, so it is on screen in every state this step can be in —
+ * before the camera permission has been answered, with permission granted and the preview live, with
+ * permission denied (including "don't ask again"), when the camera cannot be opened, and when the barcode
+ * reader itself fails. It is what makes the step impossible to get stuck in.
+ *
+ * Skipping the scan never records anything by itself: it hands over to the same identification and explicit
+ * confirmation every dose goes through (name, strength and form compared with the physical medication, the
+ * confirmation tick, then the outcome). The safeguards are untouched.
+ *
+ * Only used when the medication asks for a scan — a medication with scanning switched off never reaches this
+ * step and keeps its existing workflow.
+ */
 @Composable
-private fun QrScanStep(onCode: (String) -> Unit) {
+private fun MedicationScanStep(
+    /** What to point the camera at, e.g. "Zyrtec's label" or "the prepackaged package's labels". */
+    scanTarget: String,
+    onCode: (String) -> Unit,
+    onScanSkipped: () -> Unit
+) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -327,24 +351,90 @@ private fun QrScanStep(onCode: (String) -> Unit) {
                 android.content.pm.PackageManager.PERMISSION_GRANTED
         )
     }
+    var permissionRefused by remember { mutableStateOf(false) }
+    var cameraProblem by remember { mutableStateOf<String?>(null) }
+    // Bumped to rebuild ScannerView from scratch after a problem, rather than leaving a dead preview up.
+    var attempt by remember { mutableStateOf(0) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasCameraPermission = granted
+        permissionRefused = !granted
     }
 
-    if (!hasCameraPermission) {
-        Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-            Text("Grant camera permission to scan")
+    CanNotScanButton(onClick = onScanSkipped)
+
+    Text(
+        "Scan the QR code on $scanTarget, or use the button above to verify by eye — you will still confirm " +
+            "the details before anything is recorded.",
+        style = MaterialTheme.typography.bodySmall
+    )
+
+    when {
+        !hasCameraPermission -> {
+            Text(
+                "Camera scanning is off until camera permission is granted. You can verify manually above.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+            Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                Text("Grant camera permission to scan")
+            }
+            // Android stops showing the dialog after a denial; only Settings can undo that, so say so
+            // instead of offering a button that appears to do nothing.
+            if (permissionRefused && !context.canAskForCameraPermissionAgain()) {
+                Text(
+                    "Android will not ask again. Allow Camera for CampMeds in Settings if you want to scan.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                TextButton(onClick = { context.openAppSettings() }) { Text("Open app settings") }
+            }
         }
-    } else {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(240.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            ScannerView(onScanned = onCode)
+
+        cameraProblem != null -> {
+            Text(cameraProblem!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(
+                "Verify manually above, or try the camera again.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            TextButton(onClick = {
+                cameraProblem = null
+                attempt++
+            }) { Text("Try camera again") }
+        }
+
+        else -> {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(240.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                key(attempt) {
+                    ScannerView(
+                        onScanned = onCode,
+                        onError = { cameraProblem = it }
+                    )
+                }
+            }
         }
     }
+}
+
+/** Camera permissions are per-activity: the activity is what knows whether Android will ask again. */
+private tailrec fun Context.cameraActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.cameraActivity()
+    else -> null
+}
+
+/** False once a denial has made Android stop showing the permission dialog. */
+private fun Context.canAskForCameraPermissionAgain(): Boolean =
+    cameraActivity()?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) ?: true
+
+private fun Context.openAppSettings() {
+    startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
 }
 
 /**
@@ -412,25 +502,26 @@ private fun DoseActionSheet(
 
             when (mode) {
                 DoseFlowMode.CONFIRM_SCAN -> {
-                    // First control on the screen, with a contrasting background (spec section 5). It keeps
-                    // doing exactly what it always did: skip the scan, verify the medication by eye.
-                    CanNotScanButton(onClick = {
-                        scanned = null
-                        scannedUnknown = false
-                        mode = DoseFlowMode.MARK_OUTCOME
-                    })
-                    Text(
-                        "Scan the QR code on ${med.name}'s label, or use the button above.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    QrScanStep(onCode = { code ->
-                        scope.launch {
-                            val found = repository.getMedicationByQr(code)
-                            scanned = found
-                            scannedUnknown = found == null
+                    // Spec section 5: "Can't scan" stays the first control on the scanner, and the step shows
+                    // it in every camera/permission state (spec: manual verification must always be reachable).
+                    MedicationScanStep(
+                        scanTarget = "${med.name}'s label",
+                        onCode = { code ->
+                            scope.launch {
+                                val found = repository.getMedicationByQr(code)
+                                scanned = found
+                                scannedUnknown = found == null
+                                mode = DoseFlowMode.MARK_OUTCOME
+                            }
+                        },
+                        onScanSkipped = {
+                            // Same manual path as before: nothing is recorded here, the outcome step still
+                            // requires the physical-verification confirmation.
+                            scanned = null
+                            scannedUnknown = false
                             mode = DoseFlowMode.MARK_OUTCOME
                         }
-                    })
+                    )
                 }
 
                 DoseFlowMode.MARK_OUTCOME -> {
@@ -563,31 +654,36 @@ private fun GroupAdministrationSheet(
 
             when (mode) {
                 DoseFlowMode.CONFIRM_SCAN -> {
-                    CanNotScanButton(onClick = {
-                        scanMessage = null
-                        scanSkipped = true
-                        mode = DoseFlowMode.MARK_OUTCOME
-                    })
                     scanMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     // A medication in this group is set to require a scan, so one scan of the package is
                     // required before the group can be recorded. key(scanKey) restarts the scanner so a
-                    // wrong label can be scanned again.
+                    // wrong label can be scanned again; the manual control inside the step is unaffected.
                     key(scanKey) {
-                        QrScanStep(onCode = { code ->
-                            scope.launch {
-                                val found = repository.getMedicationByQr(code)
-                                when {
-                                    found == null -> scanMessage = "This code is not a medication label."
-                                    found.id !in members.map { it.id } ->
-                                        scanMessage = "That label is ${found.name}, which is not in this group."
-                                    else -> {
-                                        scanMessage = null
-                                        mode = DoseFlowMode.MARK_OUTCOME
+                        MedicationScanStep(
+                            scanTarget = "the prepackaged package's labels",
+                            onCode = { code ->
+                                scope.launch {
+                                    val found = repository.getMedicationByQr(code)
+                                    when {
+                                        found == null -> scanMessage = "This code is not a medication label."
+                                        found.id !in members.map { it.id } ->
+                                            scanMessage = "That label is ${found.name}, which is not in this group."
+                                        else -> {
+                                            scanMessage = null
+                                            mode = DoseFlowMode.MARK_OUTCOME
+                                        }
                                     }
+                                    scanKey++
                                 }
-                                scanKey++
+                            },
+                            onScanSkipped = {
+                                // Untouched manual path: every member still shows what will happen to it and
+                                // nothing is recorded as Given until the sheet's own confirmation.
+                                scanMessage = null
+                                scanSkipped = true
+                                mode = DoseFlowMode.MARK_OUTCOME
                             }
-                        })
+                        )
                     }
                 }
 
