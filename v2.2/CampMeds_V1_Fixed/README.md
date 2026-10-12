@@ -108,9 +108,9 @@ on the update branch it ran:
 
 | Step | Result |
 |---|---|
-| `testDebugUnitTest` | **102 unit tests passed, 0 failed** — NDC formats (5-3-2 and pasted values included), lookup outcomes and retry behaviour, named-time rules, prepackaged rules, due list, group administration |
+| `testDebugUnitTest` | **108 unit tests passed, 0 failed** — NDC formats (5-3-2 and pasted values included), lookup outcomes, retry behaviour and the notes a no-record lookup carries, named-time rules, prepackaged rules, due list, group administration |
 | `assembleDebugAndroidTest` | instrumented suite compiles |
-| `connectedDebugAndroidTest` (API 30 x86_64 emulator) | **14 instrumented tests passed, 0 failed** — `MigrationTest` (1 → 2 → 3), `GroupAndScheduleIntegrityTest`, `HistoryIntegrityTest`, `DatabasePersistenceTest` |
+| `connectedDebugAndroidTest` (API 30 x86_64 emulator) | **14 instrumented tests passed, 0 failed** — `MigrationTest` (1 → 2 → 3), `GroupAndScheduleIntegrityTest`, `HistoryIntegrityTest`, `DatabasePersistenceTest`. The step waits for the emulator to finish booting and retries once after restarting adb if the runner cannot reach it; the retry is reported as a warning |
 | `assembleDebug` | debug APK built (uploaded as the `campmeds-debug-apk` artifact) |
 
 The CI job also prints the per-suite pass/fail counts and the Gradle failure text as annotations, so a red
