@@ -20,7 +20,7 @@ import java.util.UUID
             onDelete = ForeignKey.RESTRICT
         )
     ],
-    indices = [Index("patientId"), Index("qrCode", unique = true)]
+    indices = [Index("patientId"), Index("qrCode", unique = true), Index("prepackagedGroupId")]
 )
 data class Medication(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
@@ -34,6 +34,15 @@ data class Medication(
 
     val dosageInstructions: String,  // free text, e.g. "1 tablet, twice daily"
     val scheduleTimes: List<LocalTime>, // e.g. [08:00, 20:00] — stored via Converters
+
+    /**
+     * Named administration-time entries this schedule was built from, position by position with
+     * [scheduleTimes]. "" at a position means a custom time that is not from the shared list (all
+     * pre-existing schedules, and any time typed by hand). Always read through
+     * `ScheduleSlots`/`AdministrationTimeRules`, which tolerate a shorter or missing list.
+     */
+    val administrationTimeIds: List<String> = emptyList(),
+
     val startDate: LocalDate,
     val endDate: LocalDate? = null,
     val bottleExpiration: LocalDate? = null,
@@ -41,6 +50,25 @@ data class Medication(
 
     val isException: Boolean = false,   // true if manual override used instead of a clean NDC match
     val qrCode: String = UUID.randomUUID().toString(), // printed/attached to the bag or bottle
+
+    /**
+     * "Require QR scan when selecting this medication."
+     * true (the default, and what every pre-existing record gets) keeps the existing workflow: the
+     * medication has to be scanned before an outcome can be recorded. false is the explicit, per-medication
+     * opt-out for medications with no scannable label; the physical-verification check and the expired-bottle
+     * block still apply.
+     */
+    val requireQrScan: Boolean = true,
+
+    /**
+     * "Administer together with other selected medications." — this medication is prepackaged with others
+     * and is part of the group identified by [prepackagedGroupId]. Independent of who is scheduled when:
+     * grouping never happens by itself, and only medications of the same patient can share a group.
+     */
+    val isGroupAdministered: Boolean = false,
+
+    /** Identifier shared by the medications of one prepackaged group (see [isGroupAdministered]). */
+    val prepackagedGroupId: String? = null,
 
     /** "What is this medication for?" Shown only on the patient's details screen, never when dosing. */
     val purpose: String? = null,

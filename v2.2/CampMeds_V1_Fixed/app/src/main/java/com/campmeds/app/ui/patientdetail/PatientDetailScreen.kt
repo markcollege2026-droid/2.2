@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.campmeds.app.auth.Session
 import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Role
+import com.campmeds.app.domain.AdministrationTimeRules
 import com.campmeds.app.repository.CampMedsRepository
 import com.campmeds.app.scanner.PatientQr
 import com.campmeds.app.ui.common.PatientFormDialog
@@ -40,6 +41,8 @@ fun PatientDetailScreen(
     val scope = rememberCoroutineScope()
     val patient by repository.observePatient(patientId).collectAsState(initial = null)
     val medications by repository.observeMedicationsForPatient(patientId).collectAsState(initial = emptyList())
+    val administrationTimes by repository.observeAdministrationTimes().collectAsState(initial = emptyList())
+    val definitionsById = remember(administrationTimes) { administrationTimes.associateBy { it.id } }
     val retired by repository.observeArchivedMedicationsForPatient(patientId).collectAsState(initial = emptyList())
 
     val currentUser by Session.currentUser.collectAsState()
@@ -131,9 +134,17 @@ fun PatientDetailScreen(
                                         append(med.form).append(" · ").append(med.dosageInstructions)
                                         if (!isActive) append(" · INACTIVE")
                                         if (med.isException) append(" · MANUAL ENTRY")
+                                        if (med.isGroupAdministered) append(" · PREPACKAGED GROUP")
+                                        if (!med.requireQrScan) append(" · NO QR SCAN REQUIRED")
                                     }
                                 )
-                                Text("Schedule: ${med.scheduleTimes.joinToString(", ")}")
+                                Text(
+                                    "Schedule: " + if (definitionsById.isEmpty()) {
+                                        med.scheduleTimes.joinToString(", ")
+                                    } else {
+                                        AdministrationTimeRules.scheduleSummary(med, definitionsById)
+                                    }
+                                )
                                 Text("Starts ${med.startDate}" + (med.endDate?.let { " · ends $it" } ?: ""))
                                 med.bottleExpiration?.let { Text("Bottle expires $it") }
                                 Text(if (med.ndc.isBlank()) "NDC: none" else "NDC: ${med.ndc}")

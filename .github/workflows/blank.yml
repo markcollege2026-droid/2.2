@@ -11,6 +11,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
     defaults:
       run:
         working-directory: v2.2/CampMeds_V1_Fixed
@@ -33,8 +38,151 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # Every Gradle run appends to gradle-output.log so the failure step below can publish it: the log and
+      # artifact download endpoints are not reachable from every environment, but the API is.
+      - name: Run unit tests
+        run: |
+          set -eo pipefail
+          ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a gradle-output.log
+
+      - name: Compile instrumented tests
+        run: |
+          set -eo pipefail
+          ./gradlew assembleDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
+
+      # The migrations and the integrity guarantees are only proven by running them on a device, so the
+      # suite is executed on an emulator. Compiling it is still a separate step above: that reports a broken
+      # test source quickly, without waiting for a booted device.
+      - name: Run instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          # The ATD image is built for headless instrumented tests: it boots faster and does not bring up the
+          # UI apps that make the default image flaky on a runner without a GPU.
+          target: aosp_atd
+          emulator-boot-timeout: 900
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          working-directory: v2.2/CampMeds_V1_Fixed
+          # Kept to one line: the action runs each line of `script` through sh separately. The script waits
+          # for the device to finish booting and retries once if the runner cannot reach the emulator at all.
+          script: bash ci/run-instrumented-tests.sh
+
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: |
+          set -eo pipefail
+          ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
+
+      # The failure text is published as a job summary and as an annotation: both can be read back through the
+      # Actions API, unlike the console log, which some environments cannot download.
+      - name: Publish Gradle output on failure
+        if: failure()
+        run: |
+          # Gradle's console output only names failing tests, so pull the assertion text out of the JUnit XML.
+          python3 - <<'PY'
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+
+          chunks = []
+          for path in sorted(glob.glob("app/build/reports/tests/**/*.xml", recursive=True)):
+              try:
+                  root = ET.parse(path).getroot()
+              except Exception:
+                  continue
+              for case in root.iter("testcase"):
+                  for kind in ("failure", "error"):
+                      for problem in case.findall(kind):
+                          chunks.append(
+                              "{0} > {1}\n    {2}".format(
+                                  case.get("classname") or path,
+                                  case.get("name"),
+                                  (problem.get("message") or problem.get("type") or "").strip()[:3000],
+                              )
+                          )
+          if chunks:
+              open("test-failures.txt", "w", encoding="utf-8").write("\n\n".join(chunks))
+          PY
+
+          SOURCE=gradle-output.log
+          if [ -s test-failures.txt ]; then SOURCE=test-failures.txt; fi
+
+          {
+            echo "Gradle output (tail) for ${{ github.sha }}"
+            echo '```'
+            tail -c 60000 "$SOURCE" 2>/dev/null || echo "no output captured"
+            echo '```'
+          } > failure-report.md
+          cat failure-report.md >> "$GITHUB_STEP_SUMMARY"
+
+          # One annotation survives per step: it carries the end of the report, where the failure detail is.
+          python3 - <<'PY'
+          import os
+
+          path = "failure-report.md"
+          text = open(path, encoding="utf-8", errors="replace").read() if os.path.exists(path) else "failure-report.md missing"
+          escaped = text[-3800:].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print("::error title=Gradle output (tail)::{0}".format(escaped))
+          PY
+
+      # Counts are surfaced as annotations because those can be read back through the Actions API, unlike the
+      # console log. Both suites are counted, whichever of them ran.
+      - name: Summarize test results
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob
+          import xml.etree.ElementTree as ET
+
+          suites = {
+              "Unit tests": "app/build/test-results/testDebugUnitTest/*.xml",
+              "Instrumented tests": "app/build/outputs/androidTest-results/connected/**/*.xml",
+          }
+          for label, pattern in suites.items():
+              tests = failures = errors = skipped = 0
+              files = sorted(glob.glob(pattern, recursive=True))
+              for path in files:
+                  try:
+                      root = ET.parse(path).getroot()
+                  except Exception:
+                      continue
+                  # AGP writes either <testsuite> or a <testsuites> wrapper depending on the task.
+                  for suite in root.iter("testsuite"):
+                      tests += int(suite.get("tests") or 0)
+                      failures += int(suite.get("failures") or 0)
+                      errors += int(suite.get("errors") or 0)
+                      skipped += int(suite.get("skipped") or 0)
+                  for case in root.iter("testcase"):
+                      for kind in ("failure", "error"):
+                          for problem in case.findall(kind):
+                              detail = "{0} > {1} :: {2}".format(
+                                  case.get("classname") or path,
+                                  case.get("name"),
+                                  (problem.get("message") or problem.get("type") or "").strip()[:2000],
+                              )
+                              escaped = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                              print("::error title={0}::{1}".format(label, escaped))
+              if not files:
+                  print("::notice title={0}::not run in this build".format(label))
+              else:
+                  print(
+                      "::notice title={0}::{1} passed, {2} failed, {3} errored, {4} skipped ({5} result file(s))".format(
+                          label, tests - failures - errors - skipped, failures, errors, skipped, len(files)
+                      )
+                  )
+          PY
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: campmeds-test-reports
+          path: |
+            v2.2/CampMeds_V1_Fixed/app/build/reports/tests
+            v2.2/CampMeds_V1_Fixed/app/build/reports/androidTests
+            v2.2/CampMeds_V1_Fixed/app/build/outputs/androidTest-results
+          if-no-files-found: ignore
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4

@@ -16,10 +16,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -29,27 +29,30 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.campmeds.app.auth.Session
-import com.campmeds.app.data.entity.DoseStatus
-import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Patient
 import com.campmeds.app.data.entity.Role
-import com.campmeds.app.scanner.PatientQr
 import com.campmeds.app.repository.CampMedsRepository
+import com.campmeds.app.scanner.PatientQr
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Duration
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
 /**
- * Screen 5 (spec section 4/5): the main dashboard. Doses that are due right now, grouped by patient.
- * Tap a medication → scan QR (or verify manually) → confirm → mark given/held/refused.
- * Tap a patient (or scan their patient QR) to show only that patient's currently due medications.
+ * The home screen: the names of the patients who have medications due right now — and nothing about the
+ * medications themselves (spec section 1). Tapping a patient opens that patient's currently due medications
+ * ([PatientDueScreen]), which is where a dose is selected and administered.
  *
- * Nothing on this screen shows patient notes/conditions or a medication's purpose; those live only on
- * the patient's details screen.
+ * Which patients appear is derived, never stored: a patient is listed while at least one of their scheduled
+ * doses has had its time reached and has no recorded outcome. A patient with medications scheduled only
+ * later today does not appear at all, a patient whose only due dose has just been recorded disappears, and
+ * a patient who still has another dose due stays. Because it is computed from the clock plus the DoseLogs,
+ * restarts and midnight need no special handling.
+ *
+ * Patient notes/conditions and a medication's purpose are never shown here (they live on the patient's
+ * details screen).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +60,8 @@ fun TodaysDueScreen(
     repository: CampMedsRepository,
     onOpenPatients: () -> Unit,
     onOpenExport: () -> Unit,
+    onOpenPatientDue: (patientId: String) -> Unit,
+    onOpenSettings: () -> Unit,
     onAddMedication: (patientId: String) -> Unit,
     onLogout: () -> Unit
 ) {
@@ -96,13 +101,11 @@ fun TodaysDueScreen(
         }
     }
 
-    // Reactive: the Add Medication button and Export follow the live session, not a one-time read.
+    // Reactive: the permission-gated controls follow the live session, not a one-time read.
     val currentUser by Session.currentUser.collectAsState()
     val canAddMedication = Session.hasAtLeast(currentUser, Role.ADMIN)
     val isAdmin = canAddMedication
 
-    var selectedItem by remember { mutableStateOf<DueDoseItem?>(null) }
-    var selectedPatientId by rememberSaveable { mutableStateOf<String?>(null) }
     var showPatientScan by remember { mutableStateOf(false) }
     var showPatientPicker by remember { mutableStateOf(false) }
 
@@ -112,12 +115,11 @@ fun TodaysDueScreen(
         .collectAsState(initial = emptyList())
     val patients by repository.observePatients().collectAsState(initial = emptyList())
 
-    // Derived synchronously from the latest data, so a recorded dose disappears the moment its log is saved.
-    val groups = remember(now, activeMeds, patients, todaysLogs) {
+    // Derived synchronously from the latest data, so a recorded dose removes its patient immediately when
+    // that was their last due medication, and keeps them listed while anything is still due.
+    val dueGroups = remember(now, activeMeds, patients, todaysLogs) {
         groupByPatient(buildCurrentDueList(now, activeMeds, patients.associateBy { it.id }, todaysLogs))
     }
-    val selectedPatient = patients.firstOrNull { it.id == selectedPatientId }
-    val visibleGroups = if (selectedPatient != null) groups.filter { it.patient.id == selectedPatient.id } else groups
 
     Scaffold(
         topBar = {
@@ -128,6 +130,11 @@ fun TodaysDueScreen(
                         Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan patient QR")
                     }
                     IconButton(onClick = onOpenPatients) { Icon(Icons.Default.List, contentDescription = "Patients") }
+                    if (isAdmin) {
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Administration times")
+                        }
+                    }
                     if (isAdmin) {
                         IconButton(onClick = onOpenExport) { Icon(Icons.Default.Upload, contentDescription = "Export") }
                     }
@@ -140,10 +147,7 @@ fun TodaysDueScreen(
         floatingActionButton = {
             if (canAddMedication) {
                 ExtendedFloatingActionButton(
-                    onClick = {
-                        val target = selectedPatient
-                        if (target != null) onAddMedication(target.id) else showPatientPicker = true
-                    },
+                    onClick = { showPatientPicker = true },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
@@ -160,62 +164,21 @@ fun TodaysDueScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
+            Text(
+                "Tap a patient to see their due medications.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
 
-            if (selectedPatient != null) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Showing ${selectedPatient.name}",
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = { selectedPatientId = null }) { Text("Show all patients") }
-                }
-            }
-
-            if (visibleGroups.isEmpty()) {
+            if (dueGroups.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        if (selectedPatient != null) "No medications due right now for ${selectedPatient.name}."
-                        else "No medications due right now."
-                    )
+                    Text("No medications due right now.")
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
-                    visibleGroups.forEach { group ->
-                        item(key = "patient-${group.patient.id}") {
-                            Surface(
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                modifier = Modifier.fillMaxWidth().clickable { selectedPatientId = group.patient.id }
-                            ) {
-                                Row(
-                                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        group.patient.name,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text("${group.items.size} due", style = MaterialTheme.typography.labelLarge)
-                                }
-                            }
-                        }
-                        items(group.items, key = { "${it.medication.id}-${it.scheduledFor}" }) { item ->
-                            ListItem(
-                                headlineContent = { Text(item.medication.name) },
-                                supportingContent = {
-                                    Text("${item.scheduledFor.toLocalTime()} · ${item.medication.dosageInstructions}")
-                                },
-                                trailingContent = {
-                                    Text("DUE", color = MaterialTheme.colorScheme.error)
-                                },
-                                modifier = Modifier.clickable { selectedItem = item }
-                            )
-                            HorizontalDivider()
-                        }
+                    items(dueGroups, key = { "patient-${it.patient.id}" }) { group ->
+                        PatientDueRow(group = group, onOpen = { onOpenPatientDue(group.patient.id) })
+                        HorizontalDivider()
                     }
                 }
             }
@@ -253,31 +216,38 @@ fun TodaysDueScreen(
             repository = repository,
             onDismiss = { showPatientScan = false },
             onPatientFound = { patient ->
-                selectedPatientId = patient.id // same as tapping that patient on the dashboard
                 showPatientScan = false
+                onOpenPatientDue(patient.id) // same as tapping that patient on the dashboard
             }
         )
     }
+}
 
-    selectedItem?.let { item ->
-        DoseActionSheet(
-            item = item,
-            onDismiss = { selectedItem = null },
-            onRecord = { status, wasOverride ->
-                val user = currentUser ?: return@DoseActionSheet
-                scope.launch {
-                    repository.recordDose(
-                        medicationId = item.medication.id,
-                        scheduledFor = item.scheduledFor,
-                        status = status,
-                        loggedByUserId = user.id,
-                        wasOverride = wasOverride
-                    )
-                    selectedItem = null
-                }
-            },
-            repository = repository
-        )
+/**
+ * One patient on the home screen: the name, how many medications are due, and nothing else. Individual
+ * medication names are deliberately not shown here — they belong to the patient's own due screen.
+ */
+@Composable
+private fun PatientDueRow(group: PatientDueGroup, onOpen: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth().clickable { onOpen() }
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                group.patient.name,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "${group.items.size} due",
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text("   ›", style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 
@@ -340,144 +310,3 @@ private fun PatientScanSheet(
         }
     }
 }
-
-/**
- * Bottom-sheet dosing flow: scan (or verify manually) → explicitly verify the physical medication →
- * mark outcome.
- *
- * Override rules (spec section 6): a scan that doesn't match the due medication, or an expired bottle,
- * blocks the outcome buttons unless the user is LEVEL1_OVERRIDE or ADMIN. Proceeding that way is
- * recorded on the DoseLog as wasOverride = true.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DoseActionSheet(
-    item: DueDoseItem,
-    repository: CampMedsRepository,
-    onDismiss: () -> Unit,
-    onRecord: (DoseStatus, wasOverride: Boolean) -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    var mode by remember { mutableStateOf(DoseFlowMode.CONFIRM_SCAN) }
-    var scanned by remember { mutableStateOf<Medication?>(null) }
-    var scannedUnknown by remember { mutableStateOf(false) }
-    var verifiedPhysically by remember { mutableStateOf(false) }
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        )
-    }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        hasCameraPermission = granted
-    }
-
-    val med = item.medication
-    val canOverride = Session.hasAtLeast(Role.LEVEL1_OVERRIDE)
-    val mismatch = scannedUnknown || (scanned != null && scanned!!.id != med.id)
-    // BUG FIX (V1 bug 12): an expired bottle is never treated as normal.
-    val expired = med.bottleExpiration?.isBefore(LocalDate.now()) == true
-    val needsOverride = mismatch || expired
-    val allowed = !needsOverride || canOverride
-
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("${item.patient.name} — ${med.name}", style = MaterialTheme.typography.titleMedium)
-            Text("Due ${item.scheduledFor.toLocalTime()} · ${med.dosageInstructions}")
-
-            if (expired) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                    Text(
-                        "⚠️ EXPIRED: this bottle expired on ${med.bottleExpiration}. Do not use unless cleared by an authorized override.",
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
-            }
-
-            when (mode) {
-                DoseFlowMode.CONFIRM_SCAN -> {
-                    if (!hasCameraPermission) {
-                        Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                            Text("Grant camera permission to scan")
-                        }
-                    } else {
-                        Box(Modifier.fillMaxWidth().height(280.dp)) {
-                            ScannerView(onScanned = { code ->
-                                scope.launch {
-                                    val found = repository.getMedicationByQr(code)
-                                    scanned = found
-                                    scannedUnknown = found == null
-                                    mode = DoseFlowMode.MARK_OUTCOME
-                                }
-                            })
-                        }
-                    }
-                    // BUG FIX (V1 bug 10): this used to say "select manually" but selected nothing. It now says
-                    // what it really does: skip the scan and verify the due medication by eye.
-                    TextButton(onClick = {
-                        scanned = null; scannedUnknown = false
-                        mode = DoseFlowMode.MARK_OUTCOME
-                    }) { Text("Can't scan — verify manually") }
-                }
-
-                DoseFlowMode.MARK_OUTCOME -> {
-                    when {
-                        scannedUnknown -> Text(
-                            "⚠️ Scanned code is not recognized. It does not match this dose.",
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        mismatch -> Text(
-                            "⚠️ Scanned item is a different medication (${scanned?.name} — ${scanned?.strength}) than the one due for this dose.",
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        scanned != null -> Text("✓ Scan matches this dose.", color = MaterialTheme.colorScheme.primary)
-                        else -> Text("Scan skipped — manual verification required.")
-                    }
-                    if (needsOverride && !canOverride) {
-                        Text(
-                            "Only a Level 1 override or Admin user can proceed past this warning.",
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-
-                    // Details the provider must compare with the physical medication in hand.
-                    Card {
-                        Column(Modifier.padding(12.dp)) {
-                            Text("Compare with the physical medication:", style = MaterialTheme.typography.labelLarge)
-                            Text("Patient: ${item.patient.name}")
-                            Text("Medication: ${med.name}")
-                            Text("Strength: ${med.strength}")
-                            Text("Form: ${med.form}")
-                            Text("Dosage: ${med.dosageInstructions}")
-                            med.bottleExpiration?.let { Text("Bottle expiration: $it") }
-                        }
-                    }
-
-                    // BUG FIX (V1 bug 11): explicit confirmation before any outcome can be recorded.
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = verifiedPhysically, onCheckedChange = { verifiedPhysically = it })
-                        Text(
-                            "I verified the medication name, strength, and form against the physical medication.",
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    val enabled = verifiedPhysically && allowed
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(enabled = enabled, onClick = { onRecord(DoseStatus.GIVEN, needsOverride) }) { Text("Given") }
-                        OutlinedButton(enabled = enabled, onClick = { onRecord(DoseStatus.HELD, needsOverride) }) { Text("Held") }
-                        OutlinedButton(enabled = enabled, onClick = { onRecord(DoseStatus.REFUSED, needsOverride) }) { Text("Refused") }
-                    }
-                }
-            }
-
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    }
-}
-
-private enum class DoseFlowMode { CONFIRM_SCAN, MARK_OUTCOME }

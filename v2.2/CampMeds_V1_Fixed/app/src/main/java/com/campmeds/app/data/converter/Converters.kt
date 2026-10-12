@@ -36,6 +36,21 @@ class Converters {
         if (value.isNullOrBlank()) emptyList()
         else value.split(",").map { LocalTime.parse(it) }
 
+    // ---- LocalTime (named administration times) ----
+    @TypeConverter
+    fun fromLocalTime(value: LocalTime?): String? = value?.toString()
+
+    @TypeConverter
+    fun toLocalTime(value: String?): LocalTime? = value?.let { LocalTime.parse(it) }
+
+    // ---- String list (the administration-time ids that sit alongside Medication.scheduleTimes) ----
+    @TypeConverter
+    fun fromStringList(value: List<String>?): String = value?.joinToString(",") ?: ""
+
+    @TypeConverter
+    fun toStringList(value: String?): List<String> =
+        if (value.isNullOrBlank()) emptyList() else value.split(",")
+
     // ---- Enums ----
     @TypeConverter
     fun fromRole(value: Role): String = value.name

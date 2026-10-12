@@ -31,6 +31,96 @@ Built on top of V1 Fixed (same architecture, folders and Gradle setup). **Not co
 * First name is required, last name optional. Duplicate sheet names get ` (2)`, ` (3)` because Excel forbids duplicates.
 * Deleted patients are not browsable in-app (their history is in the export); a patient-QR scan works from the dashboard's in-app scanner only (no phone-camera deep link).
 
+## Update 2 — patients first, per-medication settings, named administration times, prepackaged groups, scanner + NDC
+
+Built on top of Update 1.1 (same architecture, folders, Gradle setup, one local encrypted database, no
+backend). **Every part of it is built and executed by CI** — unit tests, the instrumented suite on an Android
+emulator, and the debug APK (see "Verification status" below).
+
+| # | Change | Where |
+|---|---|---|
+| 1 | The home screen lists **patients** only (name + "N due"), never medication names. Tapping a patient opens that patient's currently due medications, which is where a dose is selected and administered. A patient stays listed while anything is still due, disappears when nothing is, and a patient with medications due only later today never appears. | `ui/duetoday/TodaysDueScreen.kt`, `ui/duetoday/PatientDueScreen.kt`, `ui/duetoday/DueDoseItem.kt` (`dueEntriesForPatient`) |
+| 2 | Per-medication toggle **"Require QR scan when selecting this medication."** On = the existing scan-first workflow; off = tapping the medication goes straight to the verification/outcome step. Saved per medication, survives restarts; existing records default to on (nothing changes for them). | `data/entity/Medication.kt` (`requireQrScan`), `ui/addmedication/AddEditMedicationScreen.kt`, `ui/duetoday/PatientDueScreen.kt` (`DoseActionSheet`) |
+| 3 | Administrator-managed **named administration times** (name + real time, Material 3 time picker) and a medication form that picks from them instead of typing times. Custom times remain possible, so existing medications and camps with no configured names keep working. | `data/entity/AdministrationTime.kt`, `data/dao/AdministrationTimeDao.kt`, `domain/AdministrationTimeRules.kt`, `ui/settings/SettingsScreen.kt`, `ui/addmedication/AddEditMedicationScreen.kt` |
+| 4 | **Prepackaged medication groups** (`isGroupAdministered` + `prepackagedGroupId`, per medication, same patient only) and **one-action group administration**: the sheet lists every member, states what will happen to each, and a single "Given" records one administration record per due medication dose. Undue, already-recorded and unticked medications are never touched, and a second tap cannot duplicate or overwrite. | `domain/PrepackagedGroups.kt`, `repository/CampMedsRepository.kt` (`recordGroupAdministration`), `ui/duetoday/PatientDueScreen.kt` (`GroupAdministrationSheet`, `planGroupMembers`) |
+| 5 | **"Can't scan — verify manually"** moved to the top of the scanner screen with a contrasting amber background, above the camera preview (not over it), inside a scrollable sheet so it stays usable on small screens. Same behaviour as before: skip the scan, verify by eye, safeguards intact. | `ui/duetoday/PatientDueScreen.kt` (`CanNotScanButton`) |
+| 6 | **NDC handling for every valid format**: 10-digit products (4-4, 5-3), 10-digit packages (4-4-2, 5-3-2, 5-4-1), the 11-digit billing format (5-4-2) hyphenated or not, spaces instead of dashes, and 9-digit billing product codes. The padding zero is removed from (or added to) exactly the segment that carries it — never from the whole number — and unhyphenated input is searched in every legal reading so it can never silently resolve to the wrong split. | `domain/NdcNormalizer.kt`, `network/NdcApiClient.kt`, `network/NdcLookupResult.kt` |
+| 7 | Lookup outcomes are now distinct: record found (with the directory NDC and the 11-digit billing form to check against the label), no record, **ambiguous** (more than one product matched — never guessed), invalid input, network failure, API failure. Manual entry (empty NDC, no placeholder) stays available in every case. | `ui/addmedication/AddEditMedicationScreen.kt`, `network/NdcLookupResult.kt` |
+| 8 | Tests: NDC format coverage (arrangements, billing conversion, ambiguity, invalid input), API client behaviour (query construction, parsing, failures), named-time rules (build/retime/detach/validate), prepackaged rules, and group administration. | `app/src/test/java/com/campmeds/app/...` |
+
+### Database migration 2 -> 3 (`data/Migrations.kt`)
+
+`MIGRATION_2_3` re-creates `medications` with the four new columns and creates `administration_times`
+(+ unique name index). No destructive fallback is used and no row is dropped. Defaults for existing data:
+`administrationTimeIds = ''` (every existing time is a custom time), `requireQrScan = 1` (scanning still
+required), `isGroupAdministered = 0`, `prepackagedGroupId = NULL` (nothing grouped). `MigrationTest` now
+migrates 1 → 2 → 3, validates the schema and asserts that the existing rows, the RESTRICT foreign key and the
+dose history all survive.
+
+### Rules worth knowing
+
+* **Changing a named time** (e.g. Breakfast 08:00 → 08:30) asks for confirmation, then moves exactly the
+  scheduled times that reference that entry on current medications. DoseLogs are never rewritten — history
+  keeps the time each dose was scheduled for.
+* **Removing a named time** asks for confirmation, keeps every scheduled time and turns it into a custom
+  time. No dose can be lost or silently moved to another entry.
+* **Renaming** an entry only relabels the medications that use it; no schedule changes.
+* **A group action** covers only doses that are due right now; a later dose, a held/refused one or an unticked
+  medication is listed for transparency but recorded separately (or not at all).
+* **A group is never created automatically** and never spans patients (enforced in the form, in
+  `PrepackagedGroups.validate` and again in `CampMedsRepository.saveMedicationEdit`).
+* **A lookup that is spread over several requests cannot be sunk by one of them.** A number typed without
+  dashes is searched in each legal reading (a 10-digit package code can be read 4-4-2, 5-3-2 or 5-4-1), so
+  one NDC entry can mean two or three requests. A momentary `5xx`/`429` from openFDA is retried once; if a
+  reading still cannot be checked, the record another reading found is shown **and** the readings that could
+  not be checked are named, so the label can be re-checked — a failed request never turns a good lookup into
+  "lookup failed", and it is never reported as "no such record" either. (This is what made 5-3-2 codes such
+  as `68180-613-07` come back as a lookup failure when typed without dashes.)
+
+### Codes that come back with no record — checked against the live directory
+
+The NDC Directory lists currently-listed products, in the 10-digit form, with each segment at its assigned
+width. Three codes reported from a camp list were looked up by hand; none of them has a record, and the
+reasons differ:
+
+| Code as typed | Shape | What the directory says | Why |
+|---|---|---|---|
+| `68180-252-01` | 5-3-2 (legal) | no package `68180-252-01`, no product `68180-252`, and nothing under `68180-25*` at all; the other readings of those digits (`6818-0252-01`, `68180-2520-1`) are absent too, as is the billing sibling `68180-0252-1` | the digits do not exist for that labeler (Lupin's products run `68180-1xx` upwards) — a wrong digit, or a withdrawn product |
+| `0093-025-01` | 4-3-2 — **9 digits** | never searched: 9 digits cannot be an NDC (10, or 11 in the billing format) | a digit is missing or extra; no completion matches a current record either — `0093-0025-01`, `00930-025-01` and `0093-0250-01` are all absent |
+| `00904-617-10` | 5-3-2 (legal) | no labeler `00904` exists at all; labeler `0904` (Major Pharmaceuticals) does, and its only `0904-61*` product is `0904-6172` (carbamazepine 200 mg, packages `-50` and `-61`) | the labeler carries the **padding zero of the 11-digit billing format** (`00904-6172-50` is the billing form of `0904-6172-50`); the digits as typed match no record |
+
+Two directory facts behind those results, both verified by hand against the API:
+
+* 11-digit billing values are **not** stored: `packaging.package_ndc:"00069-2587-68"` finds nothing while
+  `0069-2587-68` (Zyrtec) is there — a billing code is only ever found through the conversion the app does.
+* Labelers are stored at their assigned width: `product_ndc:0093-*` (Teva) returns 385 products, while
+  `product_ndc:00093-*` (the same labeler, zero-padded) returns none.
+
+So "no record" is usually a formatting or transcription problem, not a missing drug. A lookup that finds
+nothing now says which value was searched, which other readings of the same digits exist (when the dashes as
+typed kept them from being searched), and whether the code looks like it carries billing padding. It still
+searches only what was typed, and never substitutes another code silently.
+
+### Verification status
+
+GitHub Actions (`.github/workflows/blank.yml`) runs on every push to `main`/`master` and on pull requests, and
+on the update branch it ran:
+
+| Step | Result |
+|---|---|
+| `testDebugUnitTest` | **108 unit tests passed, 0 failed** — NDC formats (5-3-2 and pasted values included), lookup outcomes, retry behaviour and the notes a no-record lookup carries, named-time rules, prepackaged rules, due list, group administration |
+| `assembleDebugAndroidTest` | instrumented suite compiles |
+| `connectedDebugAndroidTest` (API 30 x86_64 emulator) | **14 instrumented tests passed, 0 failed** — `MigrationTest` (1 → 2 → 3), `GroupAndScheduleIntegrityTest`, `HistoryIntegrityTest`, `DatabasePersistenceTest`. The step waits for the emulator to finish booting and retries once after restarting adb if the runner cannot reach it; the retry is reported as a warning |
+| `assembleDebug` | debug APK built (uploaded as the `campmeds-debug-apk` artifact) |
+
+The CI job also prints the per-suite pass/fail counts and the Gradle failure text as annotations, so a red
+build names the failing test without opening the log.
+
+The requests the client builds were also checked against the live openFDA NDC Directory by hand: the 5-3-2
+package codes `68180-613-07` (Quetiapine, Lupin) and `10695-114-18` (Vancomycin HCL, Willow Birch) both come
+back with their record, their 4-4-2 and 5-4-1 readings do not, and the directory answers `5xx` often enough
+that one retry is worth having.
+
 ## What "V1 Fixed" is
 
 The original V1 prototype plus **only** the concrete bug fixes below. No V2 functionality is included

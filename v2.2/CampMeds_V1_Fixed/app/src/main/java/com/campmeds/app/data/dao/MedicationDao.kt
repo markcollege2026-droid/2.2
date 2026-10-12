@@ -37,6 +37,14 @@ interface MedicationDao {
     @Query("SELECT * FROM medications WHERE id = :id")
     suspend fun getById(id: String): Medication?
 
+    /** Every non-archived medication of every patient — used when a named administration time changes. */
+    @Query("SELECT * FROM medications WHERE isArchived = 0 ORDER BY name ASC")
+    suspend fun getCurrentMedications(): List<Medication>
+
+    /** The medications that belong to one prepackaged group (retired members excluded). */
+    @Query("SELECT * FROM medications WHERE prepackagedGroupId = :groupId AND isArchived = 0 ORDER BY name ASC")
+    suspend fun getByPrepackagedGroup(groupId: String): List<Medication>
+
     /** Archived medications are returned too, so scanning an old label is recognised (and flagged). */
     @Query("SELECT * FROM medications WHERE qrCode = :qrCode LIMIT 1")
     suspend fun getByQrCode(qrCode: String): Medication?

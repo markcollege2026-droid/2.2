@@ -17,9 +17,11 @@ import com.campmeds.app.ui.addmedication.AddEditMedicationScreen
 import com.campmeds.app.ui.dosehistory.DoseHistoryScreen
 import com.campmeds.app.ui.duetoday.TodaysDueScreen
 import com.campmeds.app.ui.export.ExportScreen
+import com.campmeds.app.ui.duetoday.PatientDueScreen
 import com.campmeds.app.ui.login.LoginScreen
 import com.campmeds.app.ui.patientdetail.PatientDetailScreen
 import com.campmeds.app.ui.patientlist.PatientListScreen
+import com.campmeds.app.ui.settings.SettingsScreen
 
 object Routes {
     const val LOGIN = "login"
@@ -27,10 +29,13 @@ object Routes {
     const val TODAYS_DUE = "today"
     const val EXPORT = "export"
     const val PATIENT_DETAIL = "patients/{patientId}"
+    const val PATIENT_DUE = "patients/{patientId}/due"
     const val DOSE_HISTORY = "patients/{patientId}/history"
+    const val SETTINGS = "settings"
     const val ADD_EDIT_MEDICATION = "patients/{patientId}/medication?medicationId={medicationId}"
 
     fun patientDetail(patientId: String) = "patients/$patientId"
+    fun patientDue(patientId: String) = "patients/$patientId/due"
     fun doseHistory(patientId: String) = "patients/$patientId/history"
     fun addMedication(patientId: String) = "patients/$patientId/medication"
     fun editMedication(patientId: String, medicationId: String) =
@@ -71,6 +76,9 @@ fun CampMedsNavHost(app: CampMedsApp) {
                 repository = app.repository,
                 onOpenPatients = { navController.navigate(Routes.PATIENT_LIST) },
                 onOpenExport = { navController.navigate(Routes.EXPORT) },
+                // The home screen lists patients; their due medications live on the patient's due screen.
+                onOpenPatientDue = { patientId -> navController.navigate(Routes.patientDue(patientId)) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onAddMedication = { patientId -> navController.navigate(Routes.addMedication(patientId)) },
                 onLogout = {
                     navController.navigate(Routes.LOGIN) {
@@ -99,6 +107,26 @@ fun CampMedsNavHost(app: CampMedsApp) {
                 onAddMedication = { navController.navigate(Routes.addMedication(patientId)) },
                 onEditMedication = { medId -> navController.navigate(Routes.editMedication(patientId, medId)) },
                 onOpenHistory = { navController.navigate(Routes.doseHistory(patientId)) },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Routes.PATIENT_DUE,
+            arguments = listOf(navArgument("patientId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val patientId = backStackEntry.arguments?.getString("patientId").orEmpty()
+            PatientDueScreen(
+                repository = app.repository,
+                patientId = patientId,
+                onBack = { navController.popBackStack() },
+                onOpenPatientDetails = { navController.navigate(Routes.patientDetail(patientId)) }
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                repository = app.repository,
                 onBack = { navController.popBackStack() }
             )
         }

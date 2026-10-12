@@ -6,19 +6,114 @@ import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Patient
 import java.time.LocalDateTime
 
-/** One medication dose on the dashboard. */
+/** One medication dose on a due list. */
 data class DueDoseItem(
     val medication: Medication,
     val patient: Patient,
     val scheduledFor: LocalDateTime,
     val status: DoseStatus? // always null in the due list: anything already logged is not "due"
-)
+) {
+    /** True when this medication is prepackaged with others (and therefore administered as a group). */
+    val isPrepackagedMember: Boolean
+        get() = medication.isGroupAdministered && !medication.prepackagedGroupId.isNullOrBlank()
+}
 
 /** One patient and the medications currently due for them. */
 data class PatientDueGroup(
     val patient: Patient,
     val items: List<DueDoseItem>
 )
+
+/**
+ * One row on a patient's due screen: either a single medication dose or a prepackaged group.
+ * The home screen itself shows patients only (spec section 1); this is what a patient expands into.
+ */
+sealed interface PatientDueEntry {
+    val items: List<DueDoseItem>
+    val firstDueAt: LocalDateTime
+    val sortLabel: String
+
+    data class Single(val item: DueDoseItem) : PatientDueEntry {
+        override val items: List<DueDoseItem> get() = listOf(item)
+        override val firstDueAt: LocalDateTime get() = item.scheduledFor
+        override val sortLabel: String get() = item.medication.name.lowercase()
+    }
+
+    data class Prepackaged(
+        val groupId: String,
+        override val items: List<DueDoseItem>
+    ) : PatientDueEntry {
+        override val firstDueAt: LocalDateTime get() = items.minOf { it.scheduledFor }
+        override val sortLabel: String get() = items.first().medication.name.lowercase()
+    }
+}
+
+/**
+ * Splits one patient's due doses into the rows the patient screen shows: prepackaged group cards and single
+ * medications, in due-time order.
+ *
+ * Only medications explicitly marked as prepackaged are grouped, and only with medications of the same
+ * patient that carry the same group identifier. Two medications that merely happen to be due at the same
+ * time stay separate.
+ */
+fun dueEntriesForPatient(items: List<DueDoseItem>): List<PatientDueEntry> {
+    val (grouped, singles) = items.partition { it.isPrepackagedMember }
+
+    val groupEntries = grouped
+        .groupBy { it.patient.id to it.medication.prepackagedGroupId.orEmpty() }
+        .map { (key, groupItems) ->
+            PatientDueEntry.Prepackaged(key.second, groupItems.sortedBy { it.scheduledFor })
+        }
+
+    return (groupEntries + singles.map { PatientDueEntry.Single(it) })
+        .sortedWith(compareBy({ it.firstDueAt }, { it.sortLabel }))
+}
+
+/**
+ * The state of one member of a prepackaged group today, for the group's confirmation sheet:
+ * what is due right now, what is still to come, and what was already recorded.
+ */
+data class GroupMemberPlan(
+    val medication: Medication,
+    /** Doses due right now (scheduled time reached, no outcome recorded) — these are what "Given" records. */
+    val dueItems: List<DueDoseItem>,
+    /** The next dose later today, which a group action must never mark as given. */
+    val nextDoseAt: LocalDateTime?,
+    /** Outcome already recorded for today's last dose, if any (shown, never overwritten). */
+    val alreadyRecorded: DoseStatus?
+) {
+    val dueNow: Boolean get() = dueItems.isNotEmpty()
+}
+
+/**
+ * Builds the per-medication picture used by the group sheet. Pure: it reads the clock, the medications of the
+ * group and today's DoseLogs, and nothing else.
+ */
+fun planGroupMembers(
+    now: LocalDateTime,
+    members: List<Medication>,
+    patient: Patient,
+    todaysLogs: List<DoseLog>
+): List<GroupMemberPlan> {
+    val day = now.toLocalDate()
+    val logsByMedication = todaysLogs.groupBy { it.medicationId }
+
+    return members.map { medication ->
+        val loggedByTime = logsByMedication[medication.id].orEmpty()
+            .filter { it.scheduledFor.toLocalDate() == day }
+            .associateBy { it.scheduledFor }
+        val times = medication.scheduleTimes.map { day.atTime(it) }.sorted()
+
+        GroupMemberPlan(
+            medication = medication,
+            dueItems = times
+                .filter { !it.isAfter(now) && it !in loggedByTime }
+                .map { DueDoseItem(medication, patient, it, status = null) },
+            nextDoseAt = times.firstOrNull { it.isAfter(now) },
+            alreadyRecorded = loggedByTime.values.maxByOrNull { it.scheduledFor }?.status
+        )
+    }
+}
 
 /**
  * The doses that are due RIGHT NOW: scheduled for today, scheduled time already reached

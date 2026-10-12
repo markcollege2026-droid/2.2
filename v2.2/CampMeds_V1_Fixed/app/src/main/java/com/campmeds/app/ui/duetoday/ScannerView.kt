@@ -21,15 +21,19 @@ import androidx.core.content.ContextCompat
 import com.campmeds.app.scanner.BarcodeScannerAnalyzer
 
 /**
- * Live camera preview that reports the first decoded QR value via onScanned.
- * Falls back gracefully with a message if camera permission hasn't been granted;
- * the caller (TodaysDueScreen) offers a "select manually" path per spec section 4/5
- * ("scan QR (or select manually if scan fails)").
+ * Live camera preview that reports the first decoded QR value via [onScanned].
+ *
+ * This view never decides what happens when scanning cannot work — that is the caller's job, because the
+ * caller is the one holding the "verify manually" control and the identification/confirmation rules. What
+ * this view does guarantee is that a failure is *reported* ([onError]) instead of leaving an empty grey box:
+ * a device with no back camera, a camera that refuses to bind (in use by another app, or missing), and a
+ * barcode reader that cannot start are all surfaced as text.
  */
 @Composable
 fun ScannerView(
     modifier: Modifier = Modifier,
-    onScanned: (String) -> Unit
+    onScanned: (String) -> Unit,
+    onError: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -40,7 +44,7 @@ fun ScannerView(
 
     if (!hasCameraPermission) {
         Box(modifier.fillMaxSize()) {
-            Text("Camera permission is required to scan. Use manual selection instead.")
+            Text("Camera permission is required to scan.")
         }
         return
     }
@@ -48,9 +52,23 @@ fun ScannerView(
     val previewView = remember { PreviewView(context) }
 
     DisposableEffect(Unit) {
+        // Built inside the effect so a teardown that happens while the provider is still starting up cannot
+        // touch a camera provider that no longer exists.
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val listener = Runnable {
-            val cameraProvider = cameraProviderFuture.get()
+            // get() throws if the camera provider failed to start (no camera hardware, camera service down):
+            // that used to escape as an uncaught exception on the main thread.
+            val cameraProvider = try {
+                cameraProviderFuture.get()
+            } catch (e: Exception) {
+                onError("The camera could not be started on this device.")
+                return@Runnable
+            }
+
+            if (!cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                onError("This device has no back camera to scan with.")
+                return@Runnable
+            }
 
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
@@ -62,7 +80,10 @@ fun ScannerView(
                 .also {
                     it.setAnalyzer(
                         ContextCompat.getMainExecutor(context),
-                        BarcodeScannerAnalyzer(onDetected = onScanned)
+                        BarcodeScannerAnalyzer(
+                            onDetected = onScanned,
+                            onError = { onError("The barcode reader stopped working on this device.") }
+                        )
                     )
                 }
 
@@ -71,8 +92,9 @@ fun ScannerView(
                 cameraProvider.bindToLifecycle(
                     lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis
                 )
-            } catch (_: Exception) {
-                // Binding can fail if the lifecycle is already torn down; scanner simply won't show.
+            } catch (e: Exception) {
+                // The camera is usually already open elsewhere, or the lifecycle is being torn down.
+                onError("The camera is not available right now (${e.javaClass.simpleName}).")
             }
         }
         cameraProviderFuture.addListener(listener, ContextCompat.getMainExecutor(context))

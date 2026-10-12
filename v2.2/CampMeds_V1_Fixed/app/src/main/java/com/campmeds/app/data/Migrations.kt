@@ -83,3 +83,57 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_medications_qrCode` ON `medications` (`qrCode`)")
     }
 }
+
+/**
+ * v2 -> v3. Preserves every existing row; adds the per-medication settings for the new features and the
+ * shared list of named administration times.
+ *
+ *  medications          : + administrationTimeIds, requireQrScan, isGroupAdministered, prepackagedGroupId
+ *                         (table rebuilt, like 1 -> 2, so the new NOT NULL columns carry no SQL DEFAULT
+ *                         that Room's schema validation would then have to match; the FK to patients stays
+ *                         RESTRICT so history still cannot be cascaded away)
+ *  administration_times : new table, empty to start with — administrators create the entries themselves
+ *
+ * Defaults chosen for existing data:
+ *  - administrationTimeIds = ''  → every existing schedule is a custom time, exactly as it is today
+ *  - requireQrScan = 1           → the existing "scan before recording" workflow is unchanged
+ *  - isGroupAdministered = 0, prepackagedGroupId = NULL → nothing is grouped by itself
+ */
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // ---------- medications (rebuilt so the new columns are declared exactly as Room expects) ----------
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `medications_new` (`id` TEXT NOT NULL, `patientId` TEXT NOT NULL, " +
+                "`ndc` TEXT NOT NULL, `name` TEXT NOT NULL, `strength` TEXT NOT NULL, `form` TEXT NOT NULL, " +
+                "`dosageInstructions` TEXT NOT NULL, `scheduleTimes` TEXT NOT NULL, " +
+                "`administrationTimeIds` TEXT NOT NULL, `startDate` TEXT NOT NULL, `endDate` TEXT, " +
+                "`bottleExpiration` TEXT, `pillCountEntered` INTEGER, `isException` INTEGER NOT NULL, " +
+                "`qrCode` TEXT NOT NULL, `requireQrScan` INTEGER NOT NULL, `isGroupAdministered` INTEGER NOT NULL, " +
+                "`prepackagedGroupId` TEXT, `purpose` TEXT, `isArchived` INTEGER NOT NULL, PRIMARY KEY(`id`), " +
+                "FOREIGN KEY(`patientId`) REFERENCES `patients`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )"
+        )
+        db.execSQL(
+            "INSERT INTO `medications_new` (`id`, `patientId`, `ndc`, `name`, `strength`, `form`, " +
+                "`dosageInstructions`, `scheduleTimes`, `administrationTimeIds`, `startDate`, `endDate`, " +
+                "`bottleExpiration`, `pillCountEntered`, `isException`, `qrCode`, `requireQrScan`, " +
+                "`isGroupAdministered`, `prepackagedGroupId`, `purpose`, `isArchived`) " +
+                "SELECT `id`, `patientId`, `ndc`, `name`, `strength`, `form`, `dosageInstructions`, " +
+                "`scheduleTimes`, '', `startDate`, `endDate`, `bottleExpiration`, `pillCountEntered`, " +
+                "`isException`, `qrCode`, 1, 0, NULL, `purpose`, `isArchived` FROM `medications`"
+        )
+        db.execSQL("DROP TABLE `medications`")
+        db.execSQL("ALTER TABLE `medications_new` RENAME TO `medications`")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_medications_patientId` ON `medications` (`patientId`)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_medications_qrCode` ON `medications` (`qrCode`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_medications_prepackagedGroupId` ON `medications` (`prepackagedGroupId`)")
+
+        // ---------- administration_times ----------
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `administration_times` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                "`time` TEXT NOT NULL, PRIMARY KEY(`id`))"
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_administration_times_name` ON `administration_times` (`name`)"
+        )
+    }
+}
