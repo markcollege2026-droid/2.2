@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.campmeds.app.data.entity.AdministrationTime
 import com.campmeds.app.data.entity.Medication
@@ -486,25 +487,45 @@ fun AddEditMedicationScreen(
                 style = MaterialTheme.typography.bodySmall
             )
             if (isGrouped) {
+                val pickerEntries = PrepackagedGroups.pickerEntries(
+                    PrepackagedGroups.groupsOfPatient(patientMedications, patientId),
+                    prepackagedGroupId
+                )
                 OutlinedButton(onClick = { groupMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        selectedGroup?.label
+                        selectedGroup?.let { "Group: " + it.detailLabel }
                             ?: (if (prepackagedGroupId != null) "New prepackaged group" else "Choose a group")
                     )
                 }
+                Text(
+                    "Pick the existing group this medication is packaged with, or start a new one.",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 DropdownMenu(expanded = groupMenuOpen, onDismissRequest = { groupMenuOpen = false }) {
-                    PrepackagedGroups.groupsOfPatient(patientMedications, patientId).forEach { group ->
+                    pickerEntries.forEach { entry ->
                         DropdownMenuItem(
-                            text = { Text("${group.label} (existing group)") },
+                            text = {
+                                Column {
+                                    Text(
+                                        entry.text + if (entry.isCurrent) "  ✓ current" else "",
+                                        fontWeight = if (entry.isCurrent) FontWeight.SemiBold else null
+                                    )
+                                    Text(
+                                        "${entry.group.members.size} medication" +
+                                            (if (entry.group.members.size == 1) "" else "s") + " in this group",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            },
                             onClick = {
-                                prepackagedGroupId = group.id
+                                prepackagedGroupId = entry.group.id
                                 groupMenuOpen = false
                                 groupError = null
                             }
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("New group (this medication starts it)") },
+                        text = { Text("New group (this medication starts a new one)") },
                         onClick = {
                             prepackagedGroupId = PrepackagedGroups.newGroupId()
                             groupMenuOpen = false
