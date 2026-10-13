@@ -17,6 +17,7 @@ import com.campmeds.app.ui.addmedication.AddEditMedicationScreen
 import com.campmeds.app.ui.dosehistory.DoseHistoryScreen
 import com.campmeds.app.ui.duetoday.TodaysDueScreen
 import com.campmeds.app.ui.export.ExportScreen
+import com.campmeds.app.ui.importsheet.ImportSpreadsheetScreen
 import com.campmeds.app.ui.duetoday.PatientDueScreen
 import com.campmeds.app.ui.login.LoginScreen
 import com.campmeds.app.ui.patientdetail.PatientDetailScreen
@@ -28,6 +29,7 @@ object Routes {
     const val PATIENT_LIST = "patients"
     const val TODAYS_DUE = "today"
     const val EXPORT = "export"
+    const val IMPORT = "import"
     const val PATIENT_DETAIL = "patients/{patientId}"
     const val PATIENT_DUE = "patients/{patientId}/due"
     const val DOSE_HISTORY = "patients/{patientId}/history"
@@ -127,6 +129,14 @@ fun CampMedsNavHost(app: CampMedsApp) {
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 repository = app.repository,
+                onBack = { navController.popBackStack() },
+                onOpenImport = { navController.navigate(Routes.IMPORT) }
+            )
+        }
+
+        composable(Routes.IMPORT) {
+            ImportSpreadsheetScreen(
+                importRepository = app.importRepository,
                 onBack = { navController.popBackStack() }
             )
         }

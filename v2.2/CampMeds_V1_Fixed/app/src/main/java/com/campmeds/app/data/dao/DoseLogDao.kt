@@ -39,6 +39,10 @@ interface DoseLogDao {
     @Query("SELECT * FROM dose_logs ORDER BY scheduledFor ASC")
     suspend fun getAll(): List<DoseLog>
 
+    /** Medications that already have administration records (an import must never disturb these). */
+    @Query("SELECT DISTINCT medicationId FROM dose_logs")
+    suspend fun medicationIdsWithHistory(): List<String>
+
     @Query("SELECT * FROM dose_logs WHERE medicationId = :medicationId AND scheduledFor = :scheduledFor LIMIT 1")
     suspend fun findExisting(medicationId: String, scheduledFor: String): DoseLog?
 

@@ -8,10 +8,13 @@ import androidx.room.TypeConverters
 import com.campmeds.app.data.converter.Converters
 import com.campmeds.app.data.dao.AdministrationTimeDao
 import com.campmeds.app.data.dao.DoseLogDao
+import com.campmeds.app.data.dao.ImportHistoryDao
 import com.campmeds.app.data.dao.MedicationDao
 import com.campmeds.app.data.dao.PatientDao
 import com.campmeds.app.data.dao.UserDao
 import com.campmeds.app.data.entity.AdministrationTime
+import com.campmeds.app.data.entity.ChangeHistoryEntry
+import com.campmeds.app.data.entity.ImportHistoryEntry
 import com.campmeds.app.data.entity.DoseLog
 import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Patient
@@ -20,8 +23,11 @@ import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 
 @Database(
-    entities = [Patient::class, Medication::class, DoseLog::class, User::class, AdministrationTime::class],
-    version = 4,
+    entities = [
+        Patient::class, Medication::class, DoseLog::class, User::class, AdministrationTime::class,
+        ImportHistoryEntry::class, ChangeHistoryEntry::class
+    ],
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -31,6 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun doseLogDao(): DoseLogDao
     abstract fun userDao(): UserDao
     abstract fun administrationTimeDao(): AdministrationTimeDao
+    abstract fun importHistoryDao(): ImportHistoryDao
 
     companion object {
         private const val DB_NAME = "campmeds_encrypted.db"
@@ -61,7 +68,7 @@ abstract class AppDatabase : RoomDatabase() {
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory) // <-- this is what makes the DB file SQLCipher-encrypted
                 // Real, data-preserving migrations only. There is deliberately NO destructive fallback.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
         }
     }

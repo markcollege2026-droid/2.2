@@ -147,3 +147,28 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("ALTER TABLE `medications` ADD COLUMN `prepackagedGroupName` TEXT")
     }
 }
+
+/**
+ * v4 -> v5. Adds the spreadsheet import history tables. Purely additive: no existing table, row or key is
+ * touched. The SQL matches what Room generates from ImportRecords.kt exactly (Room validates the schema on open).
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `import_history` (`id` TEXT NOT NULL, `createdAt` TEXT NOT NULL, " +
+                "`sourceFileName` TEXT NOT NULL, `mode` TEXT NOT NULL, `outcome` TEXT NOT NULL, " +
+                "`backupFileName` TEXT, `newPatients` INTEGER NOT NULL, `newMedications` INTEGER NOT NULL, " +
+                "`patientsUpdated` INTEGER NOT NULL, `medicationsUpdated` INTEGER NOT NULL, " +
+                "`fieldsChanged` INTEGER NOT NULL, `rowsSkipped` INTEGER NOT NULL, `message` TEXT, " +
+                "PRIMARY KEY(`id`))"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `change_history` (`id` TEXT NOT NULL, `importId` TEXT NOT NULL, " +
+                "`changedAt` TEXT NOT NULL, `actorUserId` TEXT, `recordType` TEXT NOT NULL, " +
+                "`recordId` TEXT NOT NULL, `field` TEXT NOT NULL, `oldValue` TEXT, `newValue` TEXT, " +
+                "`significant` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_change_history_recordId` ON `change_history` (`recordId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_change_history_importId` ON `change_history` (`importId`)")
+    }
+}

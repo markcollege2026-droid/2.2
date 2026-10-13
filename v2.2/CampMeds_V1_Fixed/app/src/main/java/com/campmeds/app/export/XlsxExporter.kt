@@ -42,7 +42,10 @@ class XlsxExporter {
     companion object {
         val COLUMNS = listOf(
             "Patient Name", "Medication", "Strength", "Form", "NDC", "Scheduled For",
-            "Status", "Logged At", "Logged By", "Override?"
+            "Status", "Logged At", "Logged By", "Override?",
+            // Appended (never inserted) so existing column positions stay the same. These identify the records
+            // for reporting and for the spreadsheet import; the report itself is still not an update template.
+            "Patient ID", "Medication ID"
         )
     }
 
@@ -111,12 +114,14 @@ class XlsxExporter {
         row.createCell(7).setCellValue(log.loggedAt.format(dtFmt))
         row.createCell(8).setCellValue(user?.name ?: "Unknown")
         row.createCell(9).setCellValue(if (log.wasOverride) "YES" else "")
+        row.createCell(10).setCellValue(med?.patientId ?: "")
+        row.createCell(11).setCellValue(med?.id ?: "")
     }
 
     // autoSizeColumn() needs java.awt font metrics, which do not exist on Android (it throws at runtime).
     // Fixed widths instead (units are 1/256 of a character).
     private fun setWidths(sheet: org.apache.poi.ss.usermodel.Sheet) {
-        val widths = intArrayOf(24, 28, 16, 14, 16, 20, 12, 20, 20, 10)
+        val widths = intArrayOf(24, 28, 16, 14, 16, 20, 12, 20, 20, 10, 38, 38)
         for (i in COLUMNS.indices) sheet.setColumnWidth(i, widths[i] * 256)
     }
 
