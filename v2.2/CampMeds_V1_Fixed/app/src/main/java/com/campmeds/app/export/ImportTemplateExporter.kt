@@ -11,6 +11,7 @@ import org.apache.poi.ss.usermodel.CellStyle
 import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.ss.usermodel.Sheet
+import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.IOException
 
@@ -102,7 +103,7 @@ object ImportTemplateExporter {
         sheet.setColumnWidth(0, 120 * 256)
     }
 
-    private fun headerStyle(workbook: XSSFWorkbook): CellStyle {
+    private fun headerStyle(workbook: XSSFWorkbook): XSSFCellStyle {
         val font = workbook.createFont().apply { bold = true }
         return workbook.createCellStyle().apply {
             setFont(font)
