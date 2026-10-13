@@ -44,7 +44,8 @@ import java.time.LocalTime
 @Composable
 fun SettingsScreen(
     repository: CampMedsRepository,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenImport: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val currentUser by Session.currentUser.collectAsState()
@@ -90,6 +91,21 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(16.dp)
                 )
+            }
+            if (isAdmin) {
+                item {
+                    OutlinedButton(
+                        onClick = onOpenImport,
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                    ) { Text("Import spreadsheet (.xlsx)") }
+                    Text(
+                        "Import patients and medications from Excel, or update records using a CampMeds template. " +
+                            "Every import is previewed and needs your confirmation.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    HorizontalDivider()
+                }
             }
             if (!isAdmin) {
                 item {

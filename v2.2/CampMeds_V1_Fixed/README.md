@@ -121,6 +121,43 @@ package codes `68180-613-07` (Quetiapine, Lupin) and `10695-114-18` (Vancomycin 
 back with their record, their 4-4-2 and 5-4-1 readings do not, and the directory answers `5xx` often enough
 that one retry is worth having.
 
+## Update 2.2 — admin spreadsheet import (.xlsx)
+
+Settings → **Import spreadsheet (.xlsx)** (Administrator only). Everything is parsed on the device with the existing Apache POI dependency; nothing is uploaded and there is no network call.
+
+Two separate workflows:
+
+- **Import new records** — for a spreadsheet without CampMeds IDs. Adds patients and medications only. Rows with an ID are rejected. A patient name that matches an existing active patient needs an explicit decision (new person, or add to the existing record). Medications that match an existing one (name, strength, form) need an ADD or SKIP decision. Nothing is overwritten.
+- **Update existing records** — requires a CampMeds template (Settings → Import spreadsheet → *Download CampMeds template*). Rows are matched by **Patient ID** and **Medication ID** only; row position and names never identify a record. Unknown, archived, malformed or wrongly typed IDs block that row. Blank cells change nothing; `[CLEAR]` is the only way to empty an optional field (Date of Birth, Last Name, Notes, Conditions, End Date, Bottle Expiration, Purpose). A medication with administration history cannot be moved to another patient by import.
+
+Safety rules:
+
+- A preview is shown before any write: new patients, new medications, patient and medication changes, possible duplicates, invalid rows, conflicts, and records absent from the sheet (information only; nothing is ever deleted or archived because a row is missing). Cancel writes nothing.
+- Significant changes (name, NDC, strength, form, dose instructions, schedule, dates, patient association) need an explicit confirmation tick.
+- Changing a medication's identity archives the old record (history kept) and creates a replacement with new IDs, the same rule as the medication form.
+- Imported medications have no dose records. Administration history is never read for writing, changed or deleted.
+- The reviewed preview is compared with a fresh plan inside the database transaction; if the database changed in between, the import is rejected.
+- The whole import is one Room transaction. Any failure rolls it back.
+- A verified, SQLCipher-encrypted recovery copy is taken in `filesDir/import_backups` before each write (last 5 kept).
+- Each attempt is logged to `import_history` (ID, time, file name, outcome, counts, no patient values). Patient detail changes are logged by field name only.
+- Limits: 10 MB file, 5,000 rows, 40 columns, first worksheet only, `.xlsx` only.
+
+Exports: the existing XLSX export layouts are unchanged except that the patient and medication sheets now have **Patient ID** and **Medication ID** columns appended at the end. Reporting exports stay usable.
+
+### Database migration 3 -> 4 (`data/Migrations.kt`)
+
+Purely additive: creates `import_history` and `change_history` (with indexes on `change_history.recordId` and `importId`). No existing table, row or key is changed. There is no destructive fallback.
+
+### Verification status
+
+Not yet compiled or run in this environment (no JDK / Android SDK; Maven, Google and Gradle hosts unreachable here). The JVM tests are in `app/src/test/.../spreadsheet/SpreadsheetPlannerTest.kt`. The device tests are in `app/src/androidTest/.../SpreadsheetImportIntegrationTest.kt`. Run `./gradlew testDebugUnitTest connectedDebugAndroidTest` to verify.
+
+### Limitations
+
+- Medications have no route or frequency fields in this app; the supported fields are used instead.
+- Restoring a recovery copy is a manual, administrator-level step (there is no in-app restore).
+- The first run after updating runs the 3 -> 4 migration; Room schema JSON for version 4 is generated at build time.
+
 ## What "V1 Fixed" is
 
 The original V1 prototype plus **only** the concrete bug fixes below. No V2 functionality is included
