@@ -57,6 +57,10 @@ interface MedicationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(medication: Medication)
 
+    /** Gives every current member of one patient's prepackaged group the same group name. */
+    @Query("UPDATE medications SET prepackagedGroupName = :name WHERE prepackagedGroupId = :groupId AND patientId = :patientId AND isArchived = 0")
+    suspend fun setGroupName(groupId: String, patientId: String, name: String?)
+
     @Query("UPDATE medications SET isArchived = 1 WHERE id = :id")
     suspend fun archive(id: String)
 

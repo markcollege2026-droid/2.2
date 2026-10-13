@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.campmeds.app.data.AppDatabase
 import com.campmeds.app.data.MIGRATION_1_2
 import com.campmeds.app.data.MIGRATION_2_3
+import com.campmeds.app.data.MIGRATION_3_4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -54,7 +55,7 @@ class MigrationTest {
     fun migrate1To2To3_keepsAllDataAndAddsSafeDefaults() {
         v1Data()
 
-        val db = helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3)
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         // ---- patients (v1 -> v2 backfill still applied) ----
         db.query("SELECT id, name, firstName, lastName, notes, conditions, isArchived FROM patients ORDER BY id").use { c ->
@@ -118,7 +119,7 @@ class MigrationTest {
             execSQL("INSERT INTO dose_logs (id,medicationId,scheduledFor,status,loggedAt,wasOverride) VALUES ('d1','m1','2026-07-02T08:00','GIVEN','2026-07-02T08:01',0)")
             close()
         }
-        val db = helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3)
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
         db.execSQL("PRAGMA foreign_keys = ON")
 
         // Deleting a patient that still has medications is refused (RESTRICT) instead of cascading.
@@ -132,5 +133,25 @@ class MigrationTest {
         db.query("SELECT COUNT(*) FROM dose_logs").use { c ->
             assertTrue(c.moveToNext()); assertEquals(1, c.getInt(0))
         }
+    }
+
+    @Test
+    fun migrateToCurrent_addsNullableGroupNameAndKeepsExistingRows() {
+        // Room only exports the schema of the current version, so this migrates straight to it and validates
+        // against the exported current schema; the new column must exist, be null for existing rows, and no row
+        // may be lost.
+        v1Data()
+
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+
+        db.query("SELECT COUNT(*) FROM medications").use { c ->
+            c.moveToFirst()
+            org.junit.Assert.assertEquals(1, c.getInt(0))
+        }
+        db.query("SELECT prepackagedGroupName FROM medications WHERE id = 'm1'").use { c ->
+            c.moveToFirst()
+            org.junit.Assert.assertTrue(c.isNull(0))
+        }
+        db.close()
     }
 }
