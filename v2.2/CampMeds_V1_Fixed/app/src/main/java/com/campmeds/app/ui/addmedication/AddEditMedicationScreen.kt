@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.campmeds.app.data.entity.AdministrationTime
 import com.campmeds.app.data.entity.Medication
@@ -87,6 +88,14 @@ fun AddEditMedicationScreen(
     var requireQrScan by remember { mutableStateOf(true) }
     var isGrouped by remember { mutableStateOf(false) }
     var prepackagedGroupId by remember { mutableStateOf<String?>(null) }
+    // Group name text box: prefilled from the administration time(s) chosen above until the user edits it.
+    var groupName by remember { mutableStateOf("") }
+    var groupNameEdited by remember { mutableStateOf(false) }
+    // OCR (offline): photo of the label -> NDC candidates; photo of the instruction sheet -> dosage text.
+    var ocrNdcOpen by remember { mutableStateOf(false) }
+    var ocrNdcResult by remember { mutableStateOf<com.campmeds.app.ocr.OcrOutcome.Recognized?>(null) }
+    var ocrInstructionsOpen by remember { mutableStateOf(false) }
+    var ocrInstructionsNote by remember { mutableStateOf<String?>(null) }
     var groupMenuOpen by remember { mutableStateOf(false) }
     var patientMedications by remember { mutableStateOf<List<Medication>>(emptyList()) }
 
@@ -141,6 +150,8 @@ fun AddEditMedicationScreen(
                 requireQrScan = med.requireQrScan
                 isGrouped = med.isGroupAdministered
                 prepackagedGroupId = med.prepackagedGroupId
+                groupName = med.prepackagedGroupName.orEmpty()
+                groupNameEdited = med.prepackagedGroupName != null
                 lookedUp = if (med.isException) null
                 else NdcLookupResult.Found(
                     ndc = med.ndc,
@@ -198,6 +209,44 @@ fun AddEditMedicationScreen(
         ) {
 
             Text("Medication identification", style = MaterialTheme.typography.titleMedium)
+            OutlinedButton(onClick = { ocrNdcOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Read NDC from label photo (on device)")
+            }
+            ocrNdcResult?.let { result ->
+                Card {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val candidates = result.ndcCandidates
+                        if (candidates.isEmpty()) {
+                            Text("No NDC-shaped number was found in the photo. Type the NDC or read it again.",
+                                style = MaterialTheme.typography.bodySmall)
+                        } else {
+                            Text("Possible NDCs read from the photo — pick one, then run the lookup. " +
+                                "Nothing is saved from the photo itself.", style = MaterialTheme.typography.bodySmall)
+                            candidates.forEach { c ->
+                                val note = buildList {
+                                    add(c.format.label)
+                                    if (c.fromUnseparatedDigits) add("no dashes: check the layout on the label")
+                                    if (c.occurrences > 1) add("appears ${c.occurrences} times")
+                                }.joinToString(" · ")
+                                OutlinedButton(onClick = { onNdcChanged(c.hyphenated); ocrNdcResult = null },
+                                    modifier = Modifier.fillMaxWidth()) {
+                                    Text("${c.hyphenated}  ($note)")
+                                }
+                            }
+                        }
+                        TextButton(onClick = { ocrNdcResult = null }) { Text("Dismiss") }
+                    }
+                }
+            }
+            if (ocrNdcOpen) {
+                com.campmeds.app.ui.ocr.OcrCaptureSheet(
+                    scanType = com.campmeds.app.ocr.OcrScanType.NDC,
+                    title = "Photograph the NDC on the label",
+                    onDismiss = { ocrNdcOpen = false },
+                    onRecognized = { outcome -> ocrNdcResult = outcome; ocrNdcOpen = false }
+                )
+            }
+
             OutlinedTextField(
                 value = ndc,
                 onValueChange = ::onNdcChanged,
@@ -338,6 +387,24 @@ fun AddEditMedicationScreen(
                 supportingText = { dosageError?.let { Text(it) } },
                 modifier = Modifier.fillMaxWidth()
             )
+            OutlinedButton(onClick = { ocrInstructionsOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Read instructions from a photo (on device)")
+            }
+            ocrInstructionsNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (ocrInstructionsOpen) {
+                com.campmeds.app.ui.ocr.OcrCaptureSheet(
+                    scanType = com.campmeds.app.ocr.OcrScanType.INSTRUCTION_DOCUMENT,
+                    title = "Photograph the instructions",
+                    onDismiss = { ocrInstructionsOpen = false },
+                    onRecognized = { outcome ->
+                        // The text is placed as read (line breaks kept); review it before saving.
+                        dosageInstructions = outcome.text
+                        dosageError = null
+                        ocrInstructionsNote = "Text read from the photo is in the box above — check it before saving."
+                        ocrInstructionsOpen = false
+                    }
+                )
+            }
             OutlinedTextField(
                 value = purpose,
                 onValueChange = { purpose = it },
@@ -486,27 +553,64 @@ fun AddEditMedicationScreen(
                 style = MaterialTheme.typography.bodySmall
             )
             if (isGrouped) {
+                // Prefill from the chosen administration time name(s), e.g. "Breakfast" or "Breakfast + Dinner".
+                LaunchedEffect(isGrouped, selectedNamedIds, administrationTimes) {
+                    if (!groupNameEdited) groupName = suggestedGroupName(administrationTimes, selectedNamedIds)
+                }
+                OutlinedTextField(
+                    value = groupName,
+                    onValueChange = { groupName = it; groupNameEdited = true; groupError = null },
+                    label = { Text("Group name") },
+                    supportingText = {
+                        Text("Prefilled from the administration time you chose. Change it if needed.")
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                val pickerEntries = PrepackagedGroups.pickerEntries(
+                    PrepackagedGroups.groupsOfPatient(patientMedications, patientId),
+                    prepackagedGroupId
+                )
                 OutlinedButton(onClick = { groupMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        selectedGroup?.label
+                        selectedGroup?.let { "Group: " + it.detailLabel }
                             ?: (if (prepackagedGroupId != null) "New prepackaged group" else "Choose a group")
                     )
                 }
+                Text(
+                    "Pick the existing group this medication is packaged with, or start a new one.",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 DropdownMenu(expanded = groupMenuOpen, onDismissRequest = { groupMenuOpen = false }) {
-                    PrepackagedGroups.groupsOfPatient(patientMedications, patientId).forEach { group ->
+                    pickerEntries.forEach { entry ->
                         DropdownMenuItem(
-                            text = { Text("${group.label} (existing group)") },
+                            text = {
+                                Column {
+                                    Text(
+                                        entry.text + if (entry.isCurrent) "  ✓ current" else "",
+                                        fontWeight = if (entry.isCurrent) FontWeight.SemiBold else null
+                                    )
+                                    Text(
+                                        "${entry.group.members.size} medication" +
+                                            (if (entry.group.members.size == 1) "" else "s") + " in this group",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            },
                             onClick = {
-                                prepackagedGroupId = group.id
+                                prepackagedGroupId = entry.group.id
+                                // Joining a named group adopts its name; an unnamed group keeps the typed text.
+                                entry.group.name?.let { groupName = it; groupNameEdited = true }
                                 groupMenuOpen = false
                                 groupError = null
                             }
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("New group (this medication starts it)") },
+                        text = { Text("New group (this medication starts a new one)") },
                         onClick = {
                             prepackagedGroupId = PrepackagedGroups.newGroupId()
+                            groupNameEdited = false
                             groupMenuOpen = false
                             groupError = null
                         }
@@ -621,6 +725,7 @@ fun AddEditMedicationScreen(
                         requireQrScan = requireQrScan,
                         isGroupAdministered = isGrouped,
                         prepackagedGroupId = if (isGrouped) prepackagedGroupId else null,
+                        prepackagedGroupName = if (isGrouped) groupName.trim().ifBlank { null } else null,
                         startDate = start,
                         endDate = end,
                         bottleExpiration = expiration,
@@ -630,6 +735,10 @@ fun AddEditMedicationScreen(
                     )
 
                     // The repository repeats this check; doing it here means the message lands next to the toggle.
+                    if (isGrouped && groupName.isBlank()) {
+                        groupError = "Enter a name for the group."
+                        return@Button
+                    }
                     PrepackagedGroups.validate(medication, patientMedications)?.let {
                         groupError = it
                         return@Button
@@ -697,3 +806,11 @@ private fun FlowRowOfChips(
         }
     }
 }
+
+/**
+ * The group name suggested for the chosen administration times: their names in the order they are listed,
+ * e.g. "Breakfast" or "Breakfast + Dinner". Empty when only custom times are chosen.
+ */
+internal fun suggestedGroupName(entries: List<AdministrationTime>, selectedIds: List<String>): String =
+    entries.filter { it.id in selectedIds }.map { it.name.trim() }.filter { it.isNotEmpty() }
+        .distinct().joinToString(" + ")

@@ -317,7 +317,7 @@ private fun CanNotScanButton(onClick: () -> Unit) {
     ) {
         Icon(Icons.Default.Warning, contentDescription = null)
         Spacer(Modifier.width(8.dp))
-        Text("Can't scan — verify manually", fontWeight = FontWeight.SemiBold)
+        Text("Enter manually instead of scanning", fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -363,8 +363,8 @@ private fun MedicationScanStep(
     CanNotScanButton(onClick = onScanSkipped)
 
     Text(
-        "Scan the QR code on $scanTarget, or use the button above to verify by eye — you will still confirm " +
-            "the details before anything is recorded.",
+        "Scan the QR code on $scanTarget, or choose to enter it manually (the button above, or below the camera). " +
+            "Manual entry still requires you to confirm the details before anything is recorded.",
         style = MaterialTheme.typography.bodySmall
     )
 
@@ -414,6 +414,18 @@ private fun MedicationScanStep(
                         onError = { cameraProblem = it }
                     )
                 }
+            }
+            // Second, always-visible choice for manual entry while the camera is working.
+            // Solid, opaque background so it never reads as a transparent overlay on the camera or sheet.
+            Button(
+                onClick = onScanSkipped,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Enter manually instead of scanning", fontWeight = FontWeight.SemiBold)
             }
         }
     }

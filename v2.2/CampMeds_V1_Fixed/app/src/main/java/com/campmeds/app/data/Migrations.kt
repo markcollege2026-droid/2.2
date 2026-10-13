@@ -139,10 +139,20 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
 }
 
 /**
- * v3 -> v4. Adds the spreadsheet import history tables. Purely additive: no existing table, row or key is
- * touched. The SQL matches what Room generates from ImportRecords.kt exactly (Room validates the schema on open).
+ * Adds the optional group name to medications. Nothing is rebuilt and no row is changed: existing groups
+ * simply start unnamed (null) and keep working exactly as before.
  */
 val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `medications` ADD COLUMN `prepackagedGroupName` TEXT")
+    }
+}
+
+/**
+ * v4 -> v5. Adds the spreadsheet import history tables. Purely additive: no existing table, row or key is
+ * touched. The SQL matches what Room generates from ImportRecords.kt exactly (Room validates the schema on open).
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS `import_history` (`id` TEXT NOT NULL, `createdAt` TEXT NOT NULL, " +

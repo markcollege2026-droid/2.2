@@ -101,4 +101,24 @@ class PrepackagedGroupsTest {
         assertTrue(first.isNotBlank())
         assertTrue(first != second)
     }
+
+    @Test
+    fun pickerShowsStrengthsAndMarksTheCurrentGroup() {
+        val tenMg = medication("m6", "p1", "Zyrtec", groupId = "g3").copy(strength = "10 mg")
+        val fiveMg = medication("m7", "p1", "Zyrtec", groupId = "g4").copy(strength = "5 mg")
+        val groups = PrepackagedGroups.groupsOfPatient(listOf(tenMg, fiveMg), "p1")
+        val entries = PrepackagedGroups.pickerEntries(groups, currentGroupId = "g4")
+        assertEquals(listOf("Zyrtec 10 mg", "Zyrtec 5 mg"), entries.map { it.text })
+        assertEquals(listOf(false, true), entries.map { it.isCurrent })
+    }
+
+    @Test
+    fun pickerDistinguishesGroupsThatShowTheSameMembers() {
+        val first = medication("m8", "p1", "Zyrtec", groupId = "g5")
+        val second = medication("m9", "p1", "Zyrtec", groupId = "g6")
+        val groups = PrepackagedGroups.groupsOfPatient(listOf(first, second), "p1")
+        val entries = PrepackagedGroups.pickerEntries(groups, currentGroupId = null)
+        assertEquals(2, entries.map { it.text }.toSet().size)
+        assertTrue(entries.none { it.isCurrent })
+    }
 }

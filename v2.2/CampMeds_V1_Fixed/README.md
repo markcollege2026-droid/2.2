@@ -144,7 +144,9 @@ Safety rules:
 
 Exports: the existing XLSX export layouts are unchanged except that the patient and medication sheets now have **Patient ID** and **Medication ID** columns appended at the end. Reporting exports stay usable.
 
-### Database migration 3 -> 4 (`data/Migrations.kt`)
+### Database migration 4 -> 5 (`data/Migrations.kt`)
+
+Schema v4 is the prepackaged group name migration (`MIGRATION_3_4`, from the other update). This step is v4 -> v5.
 
 Purely additive: creates `import_history` and `change_history` (with indexes on `change_history.recordId` and `importId`). No existing table, row or key is changed. There is no destructive fallback.
 
@@ -156,7 +158,7 @@ Not yet compiled or run in this environment (no JDK / Android SDK; Maven, Google
 
 - Medications have no route or frequency fields in this app; the supported fields are used instead.
 - Restoring a recovery copy is a manual, administrator-level step (there is no in-app restore).
-- The first run after updating runs the 3 -> 4 migration; Room schema JSON for version 4 is generated at build time.
+- The first run after updating runs the 4 -> 5 migration; Room schema JSON for version 5 is generated at build time.
 
 ## What "V1 Fixed" is
 
