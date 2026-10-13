@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.campmeds.app.data.AppDatabase
 import com.campmeds.app.data.MIGRATION_1_2
 import com.campmeds.app.data.MIGRATION_2_3
+import com.campmeds.app.data.MIGRATION_3_4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -22,8 +23,9 @@ import org.junit.runner.RunWith
  *    medications exactly as they behaved before (QR scan required, nothing grouped, every scheduled time a
  *    custom time).
  *
- * The v1 baseline comes from app/schemas/.../1.json (hand-authored from the v1 entities, see README); the v3
- * schema is the one this build generates, which is why the tests validate against it after migrating.
+ * The v1 baseline comes from app/schemas/.../1.json (hand-authored from the v1 entities, see README); the current
+ * schema (v4, which adds the import history tables) is the one this build generates, which is why the tests
+ * validate against it after migrating.
  */
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
@@ -54,7 +56,7 @@ class MigrationTest {
     fun migrate1To2To3_keepsAllDataAndAddsSafeDefaults() {
         v1Data()
 
-        val db = helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3)
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         // ---- patients (v1 -> v2 backfill still applied) ----
         db.query("SELECT id, name, firstName, lastName, notes, conditions, isArchived FROM patients ORDER BY id").use { c ->
@@ -100,6 +102,14 @@ class MigrationTest {
             assertEquals("08:00", c.getString(1))
         }
 
+        // ---- spreadsheet import history (migration 3 -> 4): present and empty ----
+        db.query("SELECT COUNT(*) FROM import_history").use { c ->
+            assertTrue(c.moveToNext()); assertEquals(0, c.getInt(0))
+        }
+        db.query("SELECT COUNT(*) FROM change_history").use { c ->
+            assertTrue(c.moveToNext()); assertEquals(0, c.getInt(0))
+        }
+
         // ---- names stay unique ----
         try {
             db.execSQL("INSERT INTO administration_times (id, name, time) VALUES ('t2','Breakfast','09:00')")
@@ -118,7 +128,7 @@ class MigrationTest {
             execSQL("INSERT INTO dose_logs (id,medicationId,scheduledFor,status,loggedAt,wasOverride) VALUES ('d1','m1','2026-07-02T08:00','GIVEN','2026-07-02T08:01',0)")
             close()
         }
-        val db = helper.runMigrationsAndValidate(dbName, 3, true, MIGRATION_1_2, MIGRATION_2_3)
+        val db = helper.runMigrationsAndValidate(dbName, 4, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
         db.execSQL("PRAGMA foreign_keys = ON")
 
         // Deleting a patient that still has medications is refused (RESTRICT) instead of cascading.
