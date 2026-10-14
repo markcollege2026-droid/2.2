@@ -347,3 +347,25 @@ an existing installation to work around a signature mismatch: that deletes its a
 Use the original signing key for a data-preserving update. Never substitute the debug build for clinical
 acceptance testing. Real-camera scanning, small-screen form usability, and installation over an actual camp's
 signed build still require device acceptance testing.
+
+
+### Verified build result — 2026-10-14
+
+GitHub Actions run [38557181265](https://github.com/markcollege2026-droid/2.2/actions/runs/38557181265)
+completed successfully for application/test commit `6cc0724ddfbd5124fd46c4ea225ede2bfd2e7390`:
+
+- Debug APK assembly: passed; `campmeds-debug-apk` uploaded.
+- JVM unit tests: **167 passed, 0 failed, 0 skipped**.
+- API 30 emulator tests: **32 passed, 0 failed, 0 skipped**, including migration and encrypted persistence tests.
+- Device-test APK compilation: passed.
+- The checked-in `app/schemas/com.campmeds.app.data.AppDatabase/6.json` is the exact generated schema
+  from that successful run. Only the generated schema and this verification note were added afterward;
+  application and test source is the tested source.
+
+Earlier retry failures (scanner Compose scope, missing date import and one outdated PRN import fixture)
+were corrected before this run. Nonblocking GitHub warnings remain about older action versions and the
+upcoming `ubuntu-latest` image change. Local Android compilation was not run because this sandbox has no
+JDK/Gradle installation; the build and both test suites were executed on GitHub Actions instead.
+
+APK artifact: [campmeds-debug-apk](https://github.com/markcollege2026-droid/2.2/actions/runs/38557181265/artifacts/11891550068).
+The APK is provided through GitHub Actions, not embedded in the changed-source package.
