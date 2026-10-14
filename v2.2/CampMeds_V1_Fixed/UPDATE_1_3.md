@@ -64,7 +64,7 @@ signature mismatch. CI-only test dependencies add no cloud functionality.
 
 ## Verified build and results
 
-Source commit: `67f355271baf48f13586de275f63ebd2c1026a69` (the final follow-up commit only updates this report).
+Source commit: `67f355271baf48f13586de275f63ebd2c1026a69` (follow-up commits only update this report).
 [GitHub Actions run 38641750924](https://github.com/markcollege2026-droid/2.2/actions/runs/38641750924)
 completed successfully:
 
@@ -82,4 +82,3 @@ remains. Hardware/signing limitations listed above remain unverified, not claime
 
 The delivery ZIP contains only files added or modified relative to `3243ab0`, at their original repository
 paths. It is an overlay for that previous delivery, not a complete standalone project. No files need deletion.
-
