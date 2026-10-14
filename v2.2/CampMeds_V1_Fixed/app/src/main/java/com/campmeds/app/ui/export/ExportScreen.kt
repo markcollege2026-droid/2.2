@@ -55,7 +55,7 @@ fun ExportScreen(
             runCatching {
                 XlsxExporter().export(context, uri, data)
             }.onSuccess {
-                status = "Export complete: saved to the selected location."
+                status = "Export copy saved. All original records remain in CampMeds."
             }.onFailure {
                 status = "Export failed: ${it.message}"
             }
@@ -82,7 +82,7 @@ fun ExportScreen(
             } else {
                 Text(
                     "Exports every dose log to one XLSX workbook — one worksheet per medication, named " +
-                        "\"FirstName LastName MedicationName\". History of deleted patients and medications is included."
+                        "\"FirstName LastName MedicationName\". History of archived patients and medications is included. Export creates a copy; original records are never moved or deleted."
                 )
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = { createDocLauncher.launch(fileName) }) {

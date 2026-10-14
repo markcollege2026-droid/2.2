@@ -192,6 +192,18 @@ jobs:
             v2.2/CampMeds_V1_Fixed/app/build/outputs/androidTest-results
           if-no-files-found: ignore
 
+      # Expose the generated schema through the Checks API as well as the artifact. This allows review
+      # in restricted environments that cannot reach the artifact storage host. No patient data is included.
+      - name: Publish generated schema for review
+        if: always()
+        run: |
+          python3 - <<'PYSCHEMA'
+          import base64, gzip, pathlib
+          for path in pathlib.Path("app/schemas").glob("*/6.json"):
+              encoded = base64.b64encode(gzip.compress(path.read_bytes())).decode()
+              print("::notice title=Room schema 6 gzip-base64::" + encoded)
+          PYSCHEMA
+
       - name: Upload schemas
         if: always()
         uses: actions/upload-artifact@v4

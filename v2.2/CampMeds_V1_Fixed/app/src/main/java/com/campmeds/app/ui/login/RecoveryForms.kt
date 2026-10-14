@@ -111,7 +111,7 @@ fun EnrollRecoveryDialog(repository: CampMedsRepository, onDismiss: () -> Unit) 
             busy = true
             scope.launch {
                 try {
-                    if (repository.enrollRecovery(pin, answers)) onDismiss() else error = "Current PIN was not accepted."
+                    if (repository.enrollRecovery(pin, answers)) onDismiss() else error = "Current PIN was not accepted, or recovery is locked. After five failures, wait 30 minutes."
                 } finally { busy = false }
             }
         }

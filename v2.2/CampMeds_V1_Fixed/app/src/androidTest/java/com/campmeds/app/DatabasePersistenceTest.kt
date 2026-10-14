@@ -35,19 +35,34 @@ class DatabasePersistenceTest {
     @Test
     fun patientAndMedicationSurviveCloseAndReopen() = runBlocking {
         val db1 = AppDatabase.getInstance(context)
-        val patient = Patient(name = "Persistence Test")
+        val patient = Patient(name = "Persistence Test", startDate = LocalDate.now().plusDays(1),
+            endDate = LocalDate.now().plusDays(7), bunk = "Bunk A", counselor = "Counselor A", division = "Division A")
         db1.patientDao().upsert(patient)
         val med = Medication(
             patientId = patient.id, ndc = "0000-0000", name = "TestDrug", strength = "5 mg", form = "TABLET",
             dosageInstructions = "1 tablet", scheduleTimes = listOf(LocalTime.of(8, 0)),
-            startDate = LocalDate.now(), isException = true
+            startDate = LocalDate.now(), isException = true, isPrn = true,
+            createdByUserId = "creator-id", createdByName = "Original creator", sheetName = "Persistence Test TestDrug",
+            discontinuedOn = LocalDate.now().plusDays(5)
         )
         db1.medicationDao().upsert(med)
+        val user = com.campmeds.app.data.entity.User(name = "Recovery persistence", role = com.campmeds.app.data.entity.Role.PROVIDER,
+            pinHash = "hash", pinSalt = "salt", recoveryQuestionIds = listOf("first_pet", "first_job", "family_phrase"),
+            recoveryHashes = listOf("hash1", "hash2", "hash3"), recoverySalts = listOf("salt1", "salt2", "salt3"),
+            recoveryFailures = 5, recoveryLockedUntil = System.currentTimeMillis() + 1_800_000)
+        db1.userDao().upsert(user)
+        val log = com.campmeds.app.data.entity.DoseLog(medicationId = med.id, scheduledFor = LocalDate.now().atTime(8, 0),
+            status = com.campmeds.app.data.entity.DoseStatus.HELD, loggedAt = java.time.LocalDateTime.now(),
+            loggedByUserId = user.id, heldReason = "Original held reason")
+        db1.doseLogDao().upsert(log)
 
         AppDatabase.closeAndResetForTesting()          // simulate process restart
         val db2 = AppDatabase.getInstance(context)     // must open with the SAME key
 
-        assertNotNull(db2.patientDao().getById(patient.id))
+        assertEquals(patient, db2.patientDao().getById(patient.id))
+        assertEquals(med, db2.medicationDao().getById(med.id))
+        assertEquals(user, db2.userDao().getById(user.id))
+        assertEquals(log, db2.doseLogDao().findExisting(med.id, log.scheduledFor.toString()))
         assertEquals("TestDrug", db2.medicationDao().getById(med.id)?.name)
         assertEquals(1, db2.medicationDao().observeForPatient(patient.id).first().size)
     }

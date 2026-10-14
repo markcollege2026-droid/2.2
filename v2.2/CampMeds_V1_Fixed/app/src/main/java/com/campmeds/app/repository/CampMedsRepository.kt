@@ -5,7 +5,6 @@ import androidx.room.withTransaction
 import com.campmeds.app.data.AppDatabase
 import com.campmeds.app.data.entity.*
 import com.campmeds.app.domain.AdministrationTimeRules
-import com.campmeds.app.domain.MedicationIdentity
 import com.campmeds.app.domain.PlannedDose
 import com.campmeds.app.domain.PrepackagedGroups
 import com.campmeds.app.domain.distinctDoses
@@ -27,7 +26,6 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.util.UUID
 
 /** What removing/retiming a named administration time would affect (shown before the administrator confirms). */
 data class AdministrationTimeUsage(
@@ -72,7 +70,14 @@ class CampMedsRepository(
         RecoverySecurity.validate(answers)
         return withContext(Dispatchers.Default) { db.withTransaction {
             val user = db.userDao().getById(id) ?: return@withTransaction false
-            if (!PinHasher.verify(currentPin, user.pinSalt, user.pinHash)) return@withTransaction false
+            val now = System.currentTimeMillis()
+            if (user.recoveryLockedUntil > now) return@withTransaction false
+            if (!PinHasher.verify(currentPin, user.pinSalt, user.pinHash)) {
+                val failures = (user.recoveryFailures + 1).coerceAtMost(100)
+                db.userDao().upsert(user.copy(recoveryFailures = failures,
+                    recoveryLockedUntil = if (failures >= 5) now + 30 * 60 * 1000L else 0))
+                return@withTransaction false
+            }
             val salts = answers.keys.map { PinHasher.newSalt() }
             db.userDao().upsert(user.copy(recoveryQuestionIds = answers.keys.toList(), recoverySalts = salts,
                 recoveryHashes = answers.values.mapIndexed { i, a -> RecoverySecurity.hash(a, salts[i]) },
@@ -223,7 +228,12 @@ class CampMedsRepository(
     }
 
     /** "Deletes" a medication by archiving it. Its dose history is untouched. */
-    suspend fun archiveMedication(medicationId: String) = db.medicationDao().archive(medicationId)
+    suspend fun archiveMedication(medicationId: String) {
+        db.withTransaction {
+            val old = db.medicationDao().getById(medicationId) ?: return@withTransaction
+            saveMedicationEdit(old, old.copy(isArchived = true))
+        }
+    }
 
     /**
      * Looks up an NDC via the existing openFDA integration. Caches nothing itself — the caller (Add/Edit
@@ -312,8 +322,8 @@ class CampMedsRepository(
         db.withTransaction {
             AdministrationTimeRules.using(db.medicationDao().getCurrentMedications(), id).forEach {
                 val updated = AdministrationTimeRules.detach(it, id)
-                    db.importHistoryDao().insertChanges(MedicationChanges.between(it, updated, Session.currentUser.value?.id))
-                    db.medicationDao().upsert(updated)
+                db.importHistoryDao().insertChanges(MedicationChanges.between(it, updated, Session.currentUser.value?.id))
+                db.medicationDao().upsert(updated)
             }
             db.administrationTimeDao().getById(id)?.let { db.administrationTimeDao().delete(it) }
         }

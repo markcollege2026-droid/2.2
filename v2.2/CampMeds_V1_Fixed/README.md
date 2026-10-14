@@ -275,3 +275,75 @@ because it's the most battle-tested option and the export path isn't performance
 single camp's daily dose log. If APK size ever becomes a concern, swapping in a lighter writer
 (e.g. hand-rolling the OOXML zip, or a library like `fastexcel`) would only require changes to
 `export/XlsxExporter.kt` — nothing else in the app depends on POI directly.
+
+
+## CampMeds 1.2 update (Room schema 6)
+
+This update extends the existing Compose/Room/SQLCipher app. The notes below supersede the older
+prototype limitations above; no architecture replacement or destructive database fallback is used.
+
+### Added workflows
+
+- **Medication form:** explicit Yes/No PRN selection; reusable date presets plus manual dates;
+  original creator; and confirmed early discontinuation. New medication import rows also require
+  `PRN` = `Yes` or `No`. Existing import updates with a blank PRN cell keep the stored value.
+- **Dosing:** optional held reason saved in the administration record. “Scan medication” is available
+  directly in the patient's due list. Previously recorded outcomes are displayed as warnings; the
+  transaction refuses a second outcome for the same medication and scheduled time, including concurrent taps.
+- **History:** edits retain the medication ID, QR code and export sheet name. Dated field-level notes
+  preserve old/new values for form edits, imports, named schedule changes and discontinuation. Creator
+  names are stored as snapshots so renaming a staff account does not rewrite the setup log.
+- **Settings:** independent labels for bunk, counselor and camper division; reusable start/end dates;
+  and enrollment/change of the signed-in user's recovery questions, requiring their current PIN.
+- **Account setup/recovery:** choose three different questions from a securely shuffled question list.
+  Answers are normalized and individually salted, then hashed with PBKDF2-HMAC-SHA256 (600,000 iterations)
+  in the encrypted database. A reset requires all three answers. Five failures lock recovery for 30 minutes;
+  subsequent failures renew the lock. Counters persist across restarts. Recovery preserves account IDs,
+  roles, creator attribution and dose references; it does not sign the user in automatically. Choose private,
+  unpredictable answers: knowledge questions are not a substitute for locking and securing the device.
+- **Camper profiles:** optional start/end dates and independent bunk/counselor/division values.
+  The start and end days are inclusive. Before start and after end, campers appear in “Archive / future
+  campers (complete)” instead of the active list. The archive includes manually archived campers too.
+  Date-based status is derived, not written into the manual archive flag; extending a stay restores active
+  visibility automatically. No medications or logs are deleted. The patient list rechecks the local date
+  each second while collecting, and the dosing screens also observe resume/time/date/time-zone events.
+- **Exports:** fresh workbook copies, with an offset-aware export timestamp in workbook properties and
+  per-medication export information. Each administration is written once. Medication sheets include PRN,
+  held reasons, creator information, original end date, effective discontinuation date and dated changes.
+  Export never removes or moves the original records.
+
+### Migration and date semantics
+
+`MIGRATION_5_6` adds columns and the settings table without deleting existing records. Migrations 1→5
+are retained, and the full chain is tested against the generated schema 6. Parent-row updates now use
+Room `@Upsert`, avoiding the delete/reinsert effects of `REPLACE` on users and patients with history.
+
+- Existing medications retain their previous scheduled behavior (`isPrn = false`). Staff should review
+  that classification; the migration cannot infer whether an old prescription was actually PRN.
+- Unknown legacy creators remain explicitly unknown. No creator or recovery answer is invented.
+- Existing sheet names (including collision suffixes) are backfilled once and kept stable after edits.
+- Legacy camper dates are null/unrestricted to avoid unexpectedly hiding existing campers.
+- A camper's **end date is inclusive**: archival begins the following day.
+- A medication's **discontinuation date is effective from that day**: no further doses are offered on or
+  after it, including when discontinuation is confirmed today. The original scheduled end date and all
+  historical administrations remain intact. Discontinuation cannot be backdated.
+- PRN is an explicit classification displayed to staff. This update does not invent a new PRN frequency,
+  clinical maximum-dose rule, or unscheduled dosing regimen; existing schedule/verification rules remain.
+
+### Building and verification
+
+`.github/workflows/blank.yml` uses JDK 17 and Gradle 8.7 to assemble the debug APK, run JVM tests,
+compile device tests and run them on an API 30 emulator. Artifacts are `campmeds-debug-apk`,
+`campmeds-test-reports` and `campmeds-room-schemas`. Generated build outputs are ignored by Git.
+
+The new tests cover inclusive camper dates, date changes/rollover, repository restarts, encrypted database
+reopening, additive migration defaults, parent-update history preservation, creator attribution, PRN import
+validation, concurrent duplicate-dose prevention, held reasons, discontinuation, recovery lockout and reset,
+and repeated workbook-copy exports with stable names and old/new values.
+
+**Installation/data safety:** an Android update must use the same application ID and signing certificate
+as the installed app. CI debug keys may differ from the key used for an existing installation. Do not uninstall
+an existing installation to work around a signature mismatch: that deletes its app-private database and key.
+Use the original signing key for a data-preserving update. Never substitute the debug build for clinical
+acceptance testing. Real-camera scanning, small-screen form usability, and installation over an actual camp's
+signed build still require device acceptance testing.

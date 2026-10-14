@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.campmeds.app.auth.Session
+import com.campmeds.app.domain.isActiveOn
 import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Role
 import com.campmeds.app.domain.AdministrationTimeRules
@@ -47,7 +48,7 @@ fun PatientDetailScreen(
 
     val currentUser by Session.currentUser.collectAsState()
     val isAdmin = Session.hasAtLeast(currentUser, Role.ADMIN) // observed, so it can't go stale
-    val today = java.time.LocalDate.now()
+    val today by remember { com.campmeds.app.domain.localDays() }.collectAsState(initial = java.time.LocalDate.now())
 
     var showEdit by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -128,7 +129,7 @@ fun PatientDetailScreen(
                 }
             } else {
                 items(medications, key = { it.id }) { med ->
-                    val isActive = med.startDate <= today && (med.endDate == null || med.endDate >= today)
+                    val isActive = med.isActiveOn(today)
                     ListItem(
                         headlineContent = { Text("${med.name} — ${med.strength}") },
                         supportingContent = {
