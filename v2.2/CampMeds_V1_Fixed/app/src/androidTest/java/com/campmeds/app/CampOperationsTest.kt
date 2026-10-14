@@ -109,4 +109,17 @@ class CampOperationsTest {
         Session.logout()
         try { repo.applyBulkHold(preview,null,day.atTime(10,0)); fail() } catch (expected: IllegalStateException) { }
     }
+    @Test fun bulkCreatesSeparateHoldRowsForMultiplePatientsWithOneSharedReason() = runBlocking {
+        val a=camper("A"); val b=camper("B"); val c=camper("Unselected")
+        val ma=med(a); val mb=med(b); med(c)
+        val preview=repo.previewBulkHold(setOf(a.id,b.id),day.atTime(10,0))
+        assertEquals(2,preview.size)
+        assertEquals(2,repo.applyBulkHold(preview,"Activity off site",day.atTime(10,0)))
+        val logs=db.doseLogDao().getAll()
+        assertEquals(setOf(ma.id,mb.id),logs.map { it.medicationId }.toSet())
+        assertEquals(2,logs.map { it.id }.distinct().size)
+        assertTrue(logs.all { it.status==DoseStatus.HELD && it.heldReason=="Activity off site" && it.scheduledFor==day.atTime(8,0) })
+        assertTrue(repo.getHistoryForPatientOnce(c.id).isEmpty())
+    }
+
 }

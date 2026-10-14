@@ -117,6 +117,7 @@ dependencies {
     // android.jar's org.json is a stub in plain JVM unit tests; the real implementation is needed for NdcApiClient tests.
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     // One of these tests is run on a device for every migration; the runner is what makes them runnable.

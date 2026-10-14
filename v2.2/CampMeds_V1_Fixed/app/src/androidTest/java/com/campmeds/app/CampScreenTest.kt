@@ -54,7 +54,7 @@ class CampScreenTest {
         visible("Junior camper")
         compose.onNodeWithText("Add Medication").assertDoesNotExist()
         compose.onNodeWithText("Division: All divisions ▾").performClick()
-        compose.onNodeWithText("Junior",useUnmergedTree=true).performClick()
+        compose.onAllNodesWithText("Junior",useUnmergedTree=true).onLast().performClick()
         compose.onNodeWithText("Senior camper").assertDoesNotExist()
         compose.onAllNodes(isToggleable()).onFirst().performClick()
         compose.onNodeWithText("Hold selected patients' due doses (1)").performClick()
@@ -119,4 +119,20 @@ class CampScreenTest {
         val panel=compose.onNodeWithTag("scanner-panel").fetchSemanticsNode().boundsInRoot
         assertTrue("Preview stays clipped inside panel",preview.bottom<=panel.bottom)
     }
+    @Test fun manualVerificationRemainsPinnedAboveLongMedicationInstructions() {
+        var clicked=false
+        compose.setContent { MaterialTheme {
+            Box(Modifier.requiredSize(320.dp,360.dp)) {
+                MedicationSheetBody(onManual = { clicked=true }) {
+                    repeat(30) { Text("Long prescription instructions line $it") }
+                    MedicationScannerPanel("label",true,false,null,{}, {}, {}, {}, showManual=false) { Text("Preview") }
+                }
+            }
+        } }
+        compose.onNodeWithTag("sticky-verify-manually").assertIsDisplayed().performClick()
+        assertTrue(clicked)
+        compose.onNodeWithTag("camera-preview").performScrollTo()
+        compose.onNodeWithTag("sticky-verify-manually").assertIsDisplayed()
+    }
+
 }

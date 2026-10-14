@@ -12,8 +12,8 @@ data class DueDoseItem(
     val medication: Medication,
     val patient: Patient,
     val scheduledFor: LocalDateTime,
-    val status: DoseStatus?,
-    val isAsNeeded: Boolean = false // always null in the due list: anything already logged is not "due"
+    val status: DoseStatus?, // null in the due list; recorded outcomes are not due
+    val isAsNeeded: Boolean = false
 ) {
     /** True when this medication is prepackaged with others (and therefore administered as a group). */
     val isPrepackagedMember: Boolean

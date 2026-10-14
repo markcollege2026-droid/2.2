@@ -346,24 +346,6 @@ private fun PrepackagedGroupCard(entry: PatientDueEntry.Prepackaged, onOpen: () 
 }
 
 /**
- * The "Can't scan" control, deliberately the first thing on the scanner: full width, amber so it stands out
- * against the dark camera preview and the sheet, above the preview instead of below it, and small enough for
- * a small phone screen. It keeps its original meaning — skip the scan and verify the medication by eye.
- */
-@Composable
-private fun CanNotScanButton(onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = CampAmber, contentColor = Color(0xFF1B1B1B)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Icon(Icons.Default.Warning, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
-        Text("Enter manually instead of scanning", fontWeight = FontWeight.SemiBold)
-    }
-}
-
-/**
  * The scanner screen for a medication that requires a QR scan: the "Can't scan — verify manually" control
  * first (contrasting amber, full width, at the top), then whatever the camera is actually doing.
  *
@@ -384,7 +366,8 @@ private fun MedicationScanStep(
     /** What to point the camera at, e.g. "Zyrtec's label" or "the prepackaged package's labels". */
     scanTarget: String,
     onCode: (String) -> Unit,
-    onScanSkipped: () -> Unit
+    onScanSkipped: () -> Unit,
+    showManual: Boolean = true
 ) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
@@ -414,7 +397,7 @@ private fun MedicationScanStep(
     MedicationScannerPanel(scanTarget, hasCameraPermission,
         permissionRefused && !context.canAskForCameraPermissionAgain(), cameraProblem,
         onManual = onScanSkipped, onGrant = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-        onSettings = { context.openAppSettings() }, onRetry = { cameraProblem = null; attempt++ }) {
+        onSettings = { context.openAppSettings() }, onRetry = { cameraProblem = null; attempt++ }, showManual = showManual) {
         key(attempt) { ScannerView(onScanned = onCode, onError = { cameraProblem = it }) }
     }
 }
@@ -483,12 +466,9 @@ internal fun DoseActionSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(
-            Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        MedicationSheetBody(onManual = if (mode == DoseFlowMode.CONFIRM_SCAN) ({
+            scanned = null; scannedUnknown = false; mode = DoseFlowMode.MARK_OUTCOME
+        }) else null) {
             Text("${item.patient.name} — ${med.name}", style = MaterialTheme.typography.titleMedium)
             Text(if (item.isAsNeeded) "As-needed request · ${med.dosageInstructions}"
                 else "$label · due ${item.scheduledFor.toLocalTime()} · ${med.dosageInstructions}")
@@ -517,6 +497,7 @@ internal fun DoseActionSheet(
                     // it in every camera/permission state (spec: manual verification must always be reachable).
                     MedicationScanStep(
                         scanTarget = "${med.name}'s label",
+                        showManual = false,
                         onCode = { code ->
                             scope.launch {
                                 val found = repository.getMedicationByQr(code)
@@ -653,12 +634,9 @@ private fun GroupAdministrationSheet(
     val allowed = blocked.isEmpty() || canOverride
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(
-            Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        MedicationSheetBody(onManual = if (mode == DoseFlowMode.CONFIRM_SCAN) ({
+            scanMessage = null; scanSkipped = true; mode = DoseFlowMode.MARK_OUTCOME
+        }) else null) {
             Text("${patient.name} — prepackaged group", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Every selected medication gets its own administration record. Doses that are not due yet are never recorded.",
@@ -674,6 +652,7 @@ private fun GroupAdministrationSheet(
                     key(scanKey) {
                         MedicationScanStep(
                             scanTarget = "the prepackaged package's labels",
+                            showManual = false,
                             onCode = { code ->
                                 scope.launch {
                                     val found = repository.getMedicationByQr(code)

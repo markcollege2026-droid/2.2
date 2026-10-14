@@ -19,9 +19,9 @@ import androidx.compose.ui.graphics.Color
 @Composable
 internal fun MedicationScannerPanel(scanTarget: String, permissionGranted: Boolean, permanentlyDenied: Boolean,
     cameraProblem: String?, onManual: () -> Unit, onGrant: () -> Unit, onSettings: () -> Unit,
-    onRetry: () -> Unit, preview: @Composable () -> Unit) {
+    onRetry: () -> Unit, showManual: Boolean = true, preview: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).testTag("scanner-panel")) {
-        Button(onClick = onManual,
+        if (showManual) Button(onClick = onManual,
             colors = ButtonDefaults.buttonColors(containerColor = CampAmber, contentColor = Color(0xFF1B1B1B)),
             modifier = Modifier.fillMaxWidth().testTag("verify-manually")) { Text("Verify Manually") }
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).testTag("scanner-scroll"),
@@ -44,5 +44,18 @@ internal fun MedicationScannerPanel(scanTarget: String, permissionGranted: Boole
                 }
             }
         }
+    }
+}
+
+/** Sheet-level manual control stays reachable even with very long prescription instructions above the preview. */
+@Composable
+internal fun MedicationSheetBody(onManual: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
+    val height = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.85f
+    Column(Modifier.fillMaxWidth().heightIn(max = height)) {
+        if (onManual != null) Button(onClick = onManual,
+            colors = ButtonDefaults.buttonColors(containerColor = CampAmber, contentColor = Color(0xFF1B1B1B)),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("sticky-verify-manually")) { Text("Verify Manually") }
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(16.dp).testTag("dose-sheet-scroll"),
+            verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
 }

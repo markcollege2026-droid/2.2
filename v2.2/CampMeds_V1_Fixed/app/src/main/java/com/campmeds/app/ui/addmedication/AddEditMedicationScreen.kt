@@ -421,12 +421,20 @@ fun AddEditMedicationScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Text("PRN / as-needed medication (required)", style = MaterialTheme.typography.titleSmall)
+            if (isPrn == true) Text("Administration times are optional for PRN. Initiate each as-needed dose from the patient's screen; PRN is never automatically due or bulk-held.")
+            Row {
+                FilterChip(selected = isPrn == true, onClick = { isPrn = true; scheduleError = null }, label = { Text("Yes — PRN") })
+                Spacer(Modifier.width(12.dp))
+                FilterChip(selected = isPrn == false, onClick = { isPrn = false }, label = { Text("No — scheduled") })
+            }
+
             // ---- administration times (named list + custom times) ----
-            Text("Administration times", style = MaterialTheme.typography.titleSmall)
+            Text(if (isPrn == true) "Administration times (optional for PRN)" else "Administration times", style = MaterialTheme.typography.titleSmall)
             if (administrationTimes.isEmpty()) {
                 Text(
                     "No named administration times are set up yet. An administrator can add them under " +
-                        "Settings → Administration times. Until then, add the time(s) below.",
+                        "Settings → Administration times. Non-PRN medications need at least one time.",
                     style = MaterialTheme.typography.bodySmall
                 )
             } else {
@@ -493,13 +501,6 @@ fun AddEditMedicationScreen(
             }
             scheduleError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-            Text("PRN / as-needed medication (required)", style = MaterialTheme.typography.titleSmall)
-            if (isPrn == true) Text("Administration times are optional for PRN. Initiate each as-needed dose from the patient's screen; PRN is never automatically due or bulk-held.")
-            Row {
-                FilterChip(selected = isPrn == true, onClick = { isPrn = true }, label = { Text("Yes — PRN") })
-                Spacer(Modifier.width(12.dp))
-                FilterChip(selected = isPrn == false, onClick = { isPrn = false }, label = { Text("No — scheduled") })
-            }
             com.campmeds.app.ui.common.SessionPresetField(sessions) { startText = it.startDate.toString(); endText = it.endDate.toString() }
             com.campmeds.app.ui.common.DatePresetField("Start date (YYYY-MM-DD)", startText, campSettings.startDates) { startText = it; startError = null }
             startError?.let { Text(it, color = MaterialTheme.colorScheme.error) }

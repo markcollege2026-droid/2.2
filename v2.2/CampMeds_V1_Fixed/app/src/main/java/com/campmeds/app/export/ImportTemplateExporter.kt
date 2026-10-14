@@ -100,7 +100,7 @@ object ImportTemplateExporter {
             "A blank cell means no change. Nothing is deleted because a row is missing from the sheet.",
             "To empty an optional value (Date of Birth, Last Name, Notes, Conditions, End Date, Bottle Expiration, Purpose), type $CLEAR_TOKEN in that cell. Update only.",
             "Dates: YYYY-MM-DD (for example 2026-07-15). Times: HH:MM, separated by commas (for example 08:00, 20:00).",
-            "A new medication needs Medication, Dosage Instructions, Schedule Times, Start Date and PRN (Yes or No)."
+            "A new medication needs Medication, Dosage Instructions, Start Date and PRN (Yes or No). Schedule Times is required only when PRN is No."
         )
         lines.forEachIndexed { index, text -> sheet.createRow(index).createCell(0).setCellValue(text) }
         sheet.setColumnWidth(0, 120 * 256)
