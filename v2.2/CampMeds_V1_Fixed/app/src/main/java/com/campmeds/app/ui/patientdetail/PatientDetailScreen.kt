@@ -48,6 +48,7 @@ fun PatientDetailScreen(
     val currentUser by Session.currentUser.collectAsState()
     val isAdmin = Session.hasAtLeast(currentUser, Role.ADMIN) // observed, so it can't go stale
     val today = java.time.LocalDate.now()
+    val settings by repository.observeSettings().collectAsState(initial = emptyMap())
 
     var showEdit by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -55,7 +56,7 @@ fun PatientDetailScreen(
     var qrMedication by remember { mutableStateOf<Medication?>(null) }
 
     // A deleted (archived) patient is no longer reachable from here.
-    LaunchedEffect(patient?.isArchived) { if (patient?.isArchived == true) onBack() }
+
 
     Scaffold(
         topBar = {
@@ -92,6 +93,10 @@ fun PatientDetailScreen(
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Name", style = MaterialTheme.typography.labelLarge)
                             Text(p.name)
+                            Text("Camp dates: ${p.startDate ?: "Open"} — ${p.endDate ?: "Open"}")
+                            Text("${settings["bunkLabel"] ?: "Bunk"}: ${p.bunk ?: "—"}")
+                            Text("${settings["counselorLabel"] ?: "Counselor"}: ${p.counselor ?: "—"}")
+                            Text("${settings["divisionLabel"] ?: "Camper division"}: ${p.division ?: "—"}")
                             Text("Notes", style = MaterialTheme.typography.labelLarge)
                             Text(p.notes ?: "—")
                             Text("Conditions", style = MaterialTheme.typography.labelLarge)
@@ -124,7 +129,7 @@ fun PatientDetailScreen(
                 }
             } else {
                 items(medications, key = { it.id }) { med ->
-                    val isActive = med.startDate <= today && (med.endDate == null || med.endDate >= today)
+                    val isActive = med.discontinuedAt == null && med.startDate <= today && (med.endDate == null || med.endDate >= today)
                     ListItem(
                         headlineContent = { Text("${med.name} — ${med.strength}") },
                         supportingContent = {
@@ -146,6 +151,10 @@ fun PatientDetailScreen(
                                     }
                                 )
                                 Text("Starts ${med.startDate}" + (med.endDate?.let { " · ends $it" } ?: ""))
+                                Text("PRN: ${if (med.isPrn) "Yes (as needed)" else "No"}")
+                                Text("Created by: ${med.createdByName ?: "Unknown (legacy record)"}")
+                                med.createdAt?.let { Text("Setup: $it") }
+                                med.effectiveEndDate?.let { Text("Discontinued: $it (${med.discontinuedAt})") }
                                 med.bottleExpiration?.let { Text("Bottle expires $it") }
                                 Text(if (med.ndc.isBlank()) "NDC: none" else "NDC: ${med.ndc}")
                                 med.purpose?.takeIf { it.isNotBlank() }?.let { Text("For: $it") }
@@ -179,13 +188,10 @@ fun PatientDetailScreen(
                 title = "Edit patient",
                 initial = p,
                 onDismiss = { showEdit = false },
-                onSave = { first, last, notes, conditions ->
+                repository = repository,
+                onSave = { updated ->
                     showEdit = false
-                    scope.launch {
-                        repository.savePatient(
-                            p.copy(firstName = first, lastName = last, notes = notes, conditions = conditions)
-                        )
-                    }
+                    scope.launch { repository.savePatient(updated) }
                 }
             )
         }

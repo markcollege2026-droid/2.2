@@ -158,41 +158,18 @@ class SpreadsheetImportRepository(
             val patientId = create.newPatientKey?.let { patientIdByKey[it] } ?: create.draft.patientId
             check(patientId.isNotEmpty()) { "A medication row has no patient." }
             db.medicationDao().upsert(
-                create.draft.copy(
+                prepareMedicationCreation(db, create.draft.copy(
                     id = UUID.randomUUID().toString(),
                     patientId = patientId,
                     qrCode = UUID.randomUUID().toString(),
                     isException = true,
                     isArchived = false
-                )
+                ), actor)
             )
         }
 
         for (update in plan.medicationUpdates) {
-            if (update.identityChanged) {
-                // Same rule as the app's medication form: the old record is archived (history and export sheet
-                // kept) and the changed medication becomes a new record with its own id and QR code.
-                val replacement = update.target.copy(
-                    id = UUID.randomUUID().toString(),
-                    qrCode = UUID.randomUUID().toString(),
-                    isArchived = false
-                )
-                db.medicationDao().archive(update.medicationId)
-                db.medicationDao().upsert(replacement)
-                changes += ChangeHistoryEntry(
-                    importId = importId,
-                    changedAt = now,
-                    actorUserId = actor.id,
-                    recordType = "MEDICATION",
-                    recordId = update.medicationId,
-                    field = "Replaced by new record",
-                    oldValue = null,
-                    newValue = replacement.id,
-                    significant = true
-                )
-            } else {
-                db.medicationDao().upsert(update.target)
-            }
+            db.medicationDao().upsert(update.target)
             update.changes.forEach { changes += historyEntry(importId, now, actor, "MEDICATION", update.medicationId, it) }
         }
 

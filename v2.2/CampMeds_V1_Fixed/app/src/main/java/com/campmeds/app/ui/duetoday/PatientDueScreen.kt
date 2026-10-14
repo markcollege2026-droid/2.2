@@ -42,6 +42,7 @@ import com.campmeds.app.data.entity.DoseStatus
 import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Patient
 import com.campmeds.app.data.entity.Role
+import com.campmeds.app.domain.isActiveOn
 import com.campmeds.app.domain.AdministrationTimeRules
 import com.campmeds.app.domain.MedicationSafeguards
 import com.campmeds.app.domain.PlannedDose
@@ -117,7 +118,44 @@ fun PatientDueScreen(
     val currentUser by Session.currentUser.collectAsState()
 
     val entries = remember(now, activeMeds, todaysLogs, patient) {
-        val currentPatient = patient ?: return@remember emptyList()
+        if (showScan) ModalBottomSheet(onDismissRequest = { showScan = false }) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            key(scanKey) {
+                MedicationScanStep("this patient's medication", onScanSkipped = { showScan = false }, onCode = { code ->
+                    scope.launch {
+                        val med = repository.getMedicationByQr(code)
+                        val current = LocalDateTime.now()
+                        val p = repository.getPatient(patientId)
+                        val due = med?.scheduleTimes?.filter { it <= current.toLocalTime() }?.maxOrNull()?.let { current.toLocalDate().atTime(it) }
+                        val logs = repository.getHistoryForPatientOnce(patientId)
+                        val previous = logs.firstOrNull { it.medicationId == med?.id && it.scheduledFor == due }
+                        when {
+                            med == null -> scanMessage = "Medication QR not recognized."
+                            med.patientId != patientId -> scanMessage = "Wrong patient. This medication belongs to someone else."
+                            p == null || !p.isActiveOn(current.toLocalDate()) -> scanMessage = "This camper is not active today."
+                            med.isArchived || med.discontinuedAt != null || med.startDate > current.toLocalDate() ||
+                                (med.endDate != null && med.endDate < current.toLocalDate()) -> scanMessage = "This medication is inactive or discontinued."
+                            previous != null -> scanMessage = "WARNING: This dose already has an outcome (${previous.status}) at ${previous.loggedAt}. No duplicate will be recorded."
+                            due == null -> scanMessage = "No dose is due yet for this medication."
+                            else -> {
+                                scannedFromList = true
+                                selectedItem = DueDoseItem(med, p, due, status = null)
+                                showScan = false
+                                scanMessage = null
+                            }
+                        }
+                    }
+                })
+            }
+            scanMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            TextButton(onClick = { scanKey++; scanMessage = null }) { Text("Scan again") }
+        }
+    }
+    if (!showScan && scanMessage != null) AlertDialog(onDismissRequest = { scanMessage = null },
+        title = { Text("Dose not recorded") }, text = { Text(scanMessage.orEmpty()) },
+        confirmButton = { TextButton(onClick = { scanMessage = null }) { Text("OK") } })
+
+    val currentPatient = patient ?: return@remember emptyList()
         dueEntriesForPatient(
             buildCurrentDueList(
                 now = now,
@@ -128,6 +166,10 @@ fun PatientDueScreen(
         )
     }
 
+    var showScan by remember { mutableStateOf(false) }
+    var scannedFromList by remember { mutableStateOf(false) }
+    var scanMessage by remember { mutableStateOf<String?>(null) }
+    var scanKey by remember { mutableStateOf(0) }
     var selectedItem by remember { mutableStateOf<DueDoseItem?>(null) }
     var selectedGroup by remember { mutableStateOf<PatientDueEntry.Prepackaged?>(null) }
 
@@ -139,6 +181,7 @@ fun PatientDueScreen(
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
+                    TextButton(onClick = { scanMessage = null; showScan = true }) { Text("Scan medication QR") }
                     IconButton(onClick = onOpenPatientDetails) {
                         Icon(Icons.Default.Person, contentDescription = "Patient details")
                     }
@@ -167,7 +210,7 @@ fun PatientDueScreen(
                             is PatientDueEntry.Single -> SingleDoseRow(
                                 item = entry.item,
                                 definitions = definitionsById,
-                                onOpen = { selectedItem = entry.item }
+                                onOpen = { scannedFromList = false; selectedItem = entry.item }
                             )
                             is PatientDueEntry.Prepackaged -> PrepackagedGroupCard(
                                 entry = entry,
@@ -181,24 +224,64 @@ fun PatientDueScreen(
         }
     }
 
+    if (showScan) ModalBottomSheet(onDismissRequest = { showScan = false }) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            key(scanKey) {
+                MedicationScanStep("this patient's medication", onScanSkipped = { showScan = false }, onCode = { code ->
+                    scope.launch {
+                        val med = repository.getMedicationByQr(code)
+                        val current = LocalDateTime.now()
+                        val p = repository.getPatient(patientId)
+                        val due = med?.scheduleTimes?.filter { it <= current.toLocalTime() }?.maxOrNull()?.let { current.toLocalDate().atTime(it) }
+                        val logs = repository.getHistoryForPatientOnce(patientId)
+                        val previous = logs.firstOrNull { it.medicationId == med?.id && it.scheduledFor == due }
+                        when {
+                            med == null -> scanMessage = "Medication QR not recognized."
+                            med.patientId != patientId -> scanMessage = "Wrong patient. This medication belongs to someone else."
+                            p == null || !p.isActiveOn(current.toLocalDate()) -> scanMessage = "This camper is not active today."
+                            med.isArchived || med.discontinuedAt != null || med.startDate > current.toLocalDate() ||
+                                (med.endDate != null && med.endDate < current.toLocalDate()) -> scanMessage = "This medication is inactive or discontinued."
+                            previous != null -> scanMessage = "WARNING: This dose already has an outcome (${previous.status}) at ${previous.loggedAt}. No duplicate will be recorded."
+                            due == null -> scanMessage = "No dose is due yet for this medication."
+                            else -> {
+                                scannedFromList = true
+                                selectedItem = DueDoseItem(med, p, due, status = null)
+                                showScan = false
+                                scanMessage = null
+                            }
+                        }
+                    }
+                })
+            }
+            scanMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            TextButton(onClick = { scanKey++; scanMessage = null }) { Text("Scan again") }
+        }
+    }
+    if (!showScan && scanMessage != null) AlertDialog(onDismissRequest = { scanMessage = null },
+        title = { Text("Dose not recorded") }, text = { Text(scanMessage.orEmpty()) },
+        confirmButton = { TextButton(onClick = { scanMessage = null }) { Text("OK") } })
+
     val currentPatient = patient
     selectedItem?.let { item ->
         DoseActionSheet(
             item = item,
+            alreadyScanned = scannedFromList,
             repository = repository,
             definitions = definitionsById,
             onDismiss = { selectedItem = null },
-            onRecord = { status, wasOverride ->
+            onRecord = { status, wasOverride, heldReason ->
                 val user = currentUser ?: return@DoseActionSheet
                 scope.launch {
-                    repository.recordDose(
+                    val recorded = repository.recordDose(
                         medicationId = item.medication.id,
                         scheduledFor = item.scheduledFor,
                         status = status,
                         loggedByUserId = user.id,
-                        wasOverride = wasOverride
+                        wasOverride = wasOverride,
+                        heldReason = heldReason
                     )
                     selectedItem = null
+                    if (!recorded) scanMessage = "Not recorded: this dose already has an outcome or the medication/camper is no longer active. History was not changed."
                 }
             }
         )
@@ -286,7 +369,7 @@ private fun PrepackagedGroupCard(entry: PatientDueEntry.Prepackaged, onOpen: () 
             )
             entry.items.forEach { item ->
                 Text(
-                    "• ${item.medication.name} — ${item.medication.strength} (${AdministrationTimeRules.HH_MM.format(item.scheduledFor.toLocalTime())})",
+                    "• ${item.medication.name} — ${item.medication.strength} (${AdministrationTimeRules.HH_MM.format(item.scheduledFor.toLocalTime())}) · Created by ${item.medication.createdByName ?: "Unknown"}",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -464,11 +547,14 @@ private fun DoseActionSheet(
     repository: CampMedsRepository,
     definitions: Map<String, AdministrationTime>,
     onDismiss: () -> Unit,
-    onRecord: (DoseStatus, wasOverride: Boolean) -> Unit
+    alreadyScanned: Boolean = false,
+    onRecord: (DoseStatus, wasOverride: Boolean, heldReason: String?) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val med = item.medication
-    val requiresScan = med.requireQrScan
+    val requiresScan = med.requireQrScan && !alreadyScanned
+    var heldReason by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
 
     var mode by remember { mutableStateOf(if (requiresScan) DoseFlowMode.CONFIRM_SCAN else DoseFlowMode.MARK_OUTCOME) }
     var scanned by remember { mutableStateOf<Medication?>(null) }
@@ -576,6 +662,8 @@ private fun DoseActionSheet(
                             Text("Strength: ${med.strength}")
                             Text("Form: ${med.form}")
                             Text("Dosage: ${med.dosageInstructions}")
+                            Text("PRN: ${if (med.isPrn) "Yes — as needed" else "No"}")
+                            Text("Created by: ${med.createdByName ?: "Unknown (legacy record)"}")
                             med.bottleExpiration?.let { Text("Bottle expiration: $it") }
                         }
                     }
@@ -589,11 +677,12 @@ private fun DoseActionSheet(
                         )
                     }
 
-                    val enabled = verifiedPhysically && allowed
+                    OutlinedTextField(heldReason, { heldReason = it }, label = { Text("Held reason (optional; saved only for Held)") }, modifier = Modifier.fillMaxWidth())
+                    val enabled = verifiedPhysically && allowed && !submitting
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(enabled = enabled, onClick = { onRecord(DoseStatus.GIVEN, needsOverride) }) { Text("Given") }
-                        OutlinedButton(enabled = enabled, onClick = { onRecord(DoseStatus.HELD, needsOverride) }) { Text("Held") }
-                        OutlinedButton(enabled = enabled, onClick = { onRecord(DoseStatus.REFUSED, needsOverride) }) { Text("Refused") }
+                        Button(enabled = enabled, onClick = { submitting = true; onRecord(DoseStatus.GIVEN, needsOverride, null) }) { Text("Given") }
+                        OutlinedButton(enabled = enabled, onClick = { submitting = true; onRecord(DoseStatus.HELD, needsOverride, heldReason) }) { Text("Held") }
+                        OutlinedButton(enabled = enabled, onClick = { submitting = true; onRecord(DoseStatus.REFUSED, needsOverride, null) }) { Text("Refused") }
                     }
                 }
             }

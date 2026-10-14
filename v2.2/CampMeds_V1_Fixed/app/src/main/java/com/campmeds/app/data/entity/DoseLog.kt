@@ -29,5 +29,6 @@ data class DoseLog(
     val status: DoseStatus,
     val loggedAt: LocalDateTime,         // actual timestamp of the action
     val loggedByUserId: String?,         // nullable to survive user deletion (FK SET_NULL)
+    val heldReason: String? = null,
     val wasOverride: Boolean = false     // true if a LEVEL1_OVERRIDE user bypassed a scan/NDC mismatch
 )

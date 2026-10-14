@@ -2,7 +2,7 @@ name: Android Build Workflow
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "arena/cebd8181-2-2"]
   pull_request:
     branches: ["main", "master"]
   workflow_dispatch:
@@ -30,13 +30,15 @@ jobs:
           distribution: "zulu"
           java-version: "17"
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Generate Gradle Wrapper
         run: |
           gradle wrapper --gradle-version 8.7
           chmod +x gradlew
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
 
       # Every Gradle run appends to gradle-output.log so the failure step below can publish it: the log and
       # artifact download endpoints are not reachable from every environment, but the API is.
@@ -183,6 +185,13 @@ jobs:
             v2.2/CampMeds_V1_Fixed/app/build/reports/androidTests
             v2.2/CampMeds_V1_Fixed/app/build/outputs/androidTest-results
           if-no-files-found: ignore
+
+      - name: Upload Room schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: campmeds-room-schemas
+          path: v2.2/CampMeds_V1_Fixed/app/schemas
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4

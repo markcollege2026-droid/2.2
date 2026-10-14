@@ -28,9 +28,11 @@ fun PatientListScreen(
     onBack: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
-    val patients by remember(query) {
-        if (query.isBlank()) repository.observePatients() else repository.searchPatients(query)
+    var archive by remember { mutableStateOf(false) }
+    val rows by remember(archive) {
+        if (archive) repository.observeArchive() else repository.observePatients()
     }.collectAsState(initial = emptyList())
+    val patients = rows.filter { it.name.contains(query, ignoreCase = true) }
     val scope = rememberCoroutineScope()
 
     var showAddDialog by remember { mutableStateOf(false) }
@@ -55,6 +57,10 @@ fun PatientListScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            Row {
+                FilterChip(selected = !archive, onClick = { archive = false }, label = { Text("Active campers") })
+                FilterChip(selected = archive, onClick = { archive = true }, label = { Text("Complete archive / future") })
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -72,7 +78,7 @@ fun PatientListScreen(
                     items(patients, key = { it.id }) { patient ->
                         ListItem(
                             headlineContent = { Text(patient.name) },
-                            supportingContent = { patient.dob?.let { Text("DOB: $it") } },
+                            supportingContent = { Text("${patient.startDate ?: "Open start"} — ${patient.endDate ?: "Open end"}" + if (patient.isArchived) " · Manually archived" else "") },
                             modifier = Modifier.clickable { onOpenPatient(patient.id) }
                         )
                         HorizontalDivider()
@@ -87,13 +93,10 @@ fun PatientListScreen(
             title = "Add patient",
             initial = null,
             onDismiss = { showAddDialog = false },
-            onSave = { first, last, notes, conditions ->
+            repository = repository,
+            onSave = { patient ->
                 showAddDialog = false
-                scope.launch {
-                    repository.savePatient(
-                        Patient(name = "", firstName = first, lastName = last, notes = notes, conditions = conditions)
-                    )
-                }
+                scope.launch { repository.savePatient(patient) }
             }
         )
     }

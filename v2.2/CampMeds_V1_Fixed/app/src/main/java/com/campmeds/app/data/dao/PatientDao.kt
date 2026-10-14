@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 interface PatientDao {
+    @Query("SELECT * FROM patients ORDER BY name ASC")
+    fun observeIncludingArchived(): Flow<List<Patient>>
+
     @Query("SELECT * FROM patients WHERE isArchived = 0 ORDER BY name ASC")
     fun observeAll(): Flow<List<Patient>>
 

@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.campmeds.app.auth.Session
+import com.campmeds.app.domain.isActiveOn
 import com.campmeds.app.data.entity.Patient
 import com.campmeds.app.data.entity.Role
 import com.campmeds.app.repository.CampMedsRepository
@@ -292,7 +293,7 @@ private fun PatientScanSheet(
                                     return@launch
                                 }
                                 val patient = repository.getPatient(patientId)
-                                if (patient == null || patient.isArchived) {
+                                if (patient == null || !patient.isActiveOn(LocalDate.now())) {
                                     message = "This patient was not found. They may have been deleted."
                                 } else {
                                     onPatientFound(patient)

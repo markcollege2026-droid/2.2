@@ -29,7 +29,8 @@ class XlsxExporter {
     data class MedicationSheet(
         val patientName: String,
         val medication: Medication,
-        val doseLogs: List<DoseLog>
+        val doseLogs: List<DoseLog>,
+        val changes: List<com.campmeds.app.data.entity.ChangeHistoryEntry> = emptyList()
     )
 
     data class ExportData(
@@ -45,23 +46,46 @@ class XlsxExporter {
             "Status", "Logged At", "Logged By", "Override?",
             // Appended (never inserted) so existing column positions stay the same. These identify the records
             // for reporting and for the spreadsheet import; the report itself is still not an update template.
-            "Patient ID", "Medication ID"
+            "Patient ID", "Medication ID", "Held Reason", "PRN?", "Medication Created By", "Medication Created At"
         )
     }
 
     fun export(context: Context, destination: Uri, data: ExportData) {
         XSSFWorkbook().use { workbook ->
+            val exportedAt = java.time.OffsetDateTime.now().toString()
+            workbook.properties.coreProperties.setDescription("CampMeds export copy. Exported at $exportedAt. Source records remain on the device.")
+            workbook.properties.customProperties.addProperty("ExportedAt", exportedAt)
             val headerStyle = headerStyle(workbook)
             val usedNames = HashSet<String>()
 
             data.sheets.forEach { entry ->
                 val med = entry.medication
-                val sheetName = SheetNames.unique(SheetNames.baseName(entry.patientName, med.name), usedNames)
+                val sheetName = SheetNames.unique(med.sheetName ?: SheetNames.baseName(entry.patientName, med.name), usedNames)
                 val sheet = workbook.createSheet(sheetName)
                 writeHeader(sheet, headerStyle)
 
                 entry.doseLogs.sortedBy { it.scheduledFor }.forEachIndexed { index, log ->
                     writeRow(sheet, index + 1, entry.patientName, med, log, data.usersById)
+                }
+                var rowIndex = entry.doseLogs.size + 3
+                fun information(label: String, value: String) {
+                    sheet.createRow(rowIndex++).apply { createCell(0).setCellValue(label); createCell(1).setCellValue(value) }
+                }
+                information("Exported at", exportedAt)
+                information("Patient", entry.patientName)
+                information("Medication", med.name)
+                information("PRN", if (med.isPrn) "Yes" else "No")
+                information("Medication created by", med.createdByName ?: "Unknown (legacy record)")
+                information("Medication created at", med.createdAt?.toString() ?: "Unknown")
+                information("Prescribed dates", "${med.startDate} — ${med.endDate ?: "Open"}")
+                information("Effective end date", med.effectiveEndDate?.toString().orEmpty())
+                information("Discontinued at", med.discontinuedAt?.toString().orEmpty())
+                information("Change history", "Date | Field | Previous value | New value | Changed by")
+                entry.changes.forEach { change ->
+                    sheet.createRow(rowIndex++).apply {
+                        listOf(change.changedAt.toString(), change.field, change.oldValue.orEmpty(), change.newValue.orEmpty(),
+                            data.usersById[change.actorUserId]?.name ?: change.actorUserId ?: "Unknown").forEachIndexed { i, v -> createCell(i).setCellValue(v) }
+                    }
                 }
                 setWidths(sheet)
             }
@@ -72,6 +96,26 @@ class XlsxExporter {
                 data.unlinkedLogs.sortedBy { it.scheduledFor }.forEachIndexed { index, log ->
                     writeRow(sheet, index + 1, "", null, log, data.usersById)
                 }
+                var rowIndex = entry.doseLogs.size + 3
+                fun information(label: String, value: String) {
+                    sheet.createRow(rowIndex++).apply { createCell(0).setCellValue(label); createCell(1).setCellValue(value) }
+                }
+                information("Exported at", exportedAt)
+                information("Patient", entry.patientName)
+                information("Medication", med.name)
+                information("PRN", if (med.isPrn) "Yes" else "No")
+                information("Medication created by", med.createdByName ?: "Unknown (legacy record)")
+                information("Medication created at", med.createdAt?.toString() ?: "Unknown")
+                information("Prescribed dates", "${med.startDate} — ${med.endDate ?: "Open"}")
+                information("Effective end date", med.effectiveEndDate?.toString().orEmpty())
+                information("Discontinued at", med.discontinuedAt?.toString().orEmpty())
+                information("Change history", "Date | Field | Previous value | New value | Changed by")
+                entry.changes.forEach { change ->
+                    sheet.createRow(rowIndex++).apply {
+                        listOf(change.changedAt.toString(), change.field, change.oldValue.orEmpty(), change.newValue.orEmpty(),
+                            data.usersById[change.actorUserId]?.name ?: change.actorUserId ?: "Unknown").forEachIndexed { i, v -> createCell(i).setCellValue(v) }
+                    }
+                }
                 setWidths(sheet)
             }
 
@@ -80,7 +124,7 @@ class XlsxExporter {
             }
 
             val outputStream: OutputStream? = context.contentResolver.openOutputStream(destination)
-            outputStream?.use { workbook.write(it) }
+            requireNotNull(outputStream) { "Unable to open export destination" }.use { workbook.write(it) }
         }
     }
 
@@ -116,12 +160,16 @@ class XlsxExporter {
         row.createCell(9).setCellValue(if (log.wasOverride) "YES" else "")
         row.createCell(10).setCellValue(med?.patientId ?: "")
         row.createCell(11).setCellValue(med?.id ?: "")
+        row.createCell(12).setCellValue(log.heldReason.orEmpty())
+        row.createCell(13).setCellValue(if (med?.isPrn == true) "YES" else "NO")
+        row.createCell(14).setCellValue(med?.createdByName ?: "Unknown (legacy record)")
+        row.createCell(15).setCellValue(med?.createdAt?.toString().orEmpty())
     }
 
     // autoSizeColumn() needs java.awt font metrics, which do not exist on Android (it throws at runtime).
     // Fixed widths instead (units are 1/256 of a character).
     private fun setWidths(sheet: org.apache.poi.ss.usermodel.Sheet) {
-        val widths = intArrayOf(24, 28, 16, 14, 16, 20, 12, 20, 20, 10, 38, 38)
+        val widths = intArrayOf(24, 28, 16, 14, 16, 20, 12, 20, 20, 10, 38, 38, 32, 10, 24, 24)
         for (i in COLUMNS.indices) sheet.setColumnWidth(i, widths[i] * 256)
     }
 

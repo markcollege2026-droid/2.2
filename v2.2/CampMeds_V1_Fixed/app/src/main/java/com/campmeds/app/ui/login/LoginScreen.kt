@@ -1,6 +1,9 @@
 package com.campmeds.app.ui.login
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.campmeds.app.auth.SecurityQuestions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +30,8 @@ fun LoginScreen(
 
     // First-run bootstrap: with no Users in the DB yet, nobody could ever log in — so if the
     // user table is empty, walk staff through creating the first Admin account instead.
+    var showRecovery by remember { mutableStateOf(false) }
+    if (showRecovery) RecoveryDialog(repository, onDismiss = { showRecovery = false })
     var checkedForUsers by remember { mutableStateOf(false) }
     var needsBootstrap by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -95,6 +100,7 @@ fun LoginScreen(
         ) {
             Text(if (isChecking) "Checking..." else "Log in")
         }
+        TextButton(onClick = { showRecovery = true }) { Text("Forgot PIN?") }
     }
 }
 
@@ -107,12 +113,13 @@ private fun FirstRunSetupForm(
     var name by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
+    var recovery by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -139,8 +146,9 @@ private fun FirstRunSetupForm(
         )
         Spacer(Modifier.height(16.dp))
 
+        SecurityQuestionSetup { recovery = it }
         Button(
-            enabled = name.isNotBlank() && pin.isNotBlank() && !isSaving,
+            enabled = name.isNotBlank() && SecurityQuestions.validPin(pin) && recovery.size == 3 && recovery.values.all { SecurityQuestions.normalize(it).length >= 3 } && !isSaving,
             onClick = {
                 if (pin != confirmPin) {
                     error = "PINs do not match"
@@ -148,7 +156,7 @@ private fun FirstRunSetupForm(
                 }
                 isSaving = true
                 scope.launch {
-                    val user = repository.createUser(name.trim(), Role.ADMIN, pin)
+                    val user = repository.createUser(name.trim(), Role.ADMIN, pin, recovery)
                     isSaving = false
                     onCreated(user)
                 }

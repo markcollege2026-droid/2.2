@@ -22,5 +22,10 @@ data class Patient(
     val firstName: String = "",
     val lastName: String = "",
     val conditions: String? = null,
-    val isArchived: Boolean = false
+    val isArchived: Boolean = false,
+    val startDate: LocalDate? = null,
+    val endDate: LocalDate? = null,
+    val bunk: String? = null,
+    val counselor: String? = null,
+    val division: String? = null
 )

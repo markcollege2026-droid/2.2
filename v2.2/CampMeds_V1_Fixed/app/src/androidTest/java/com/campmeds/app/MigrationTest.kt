@@ -8,6 +8,7 @@ import com.campmeds.app.data.AppDatabase
 import com.campmeds.app.data.MIGRATION_1_2
 import com.campmeds.app.data.MIGRATION_2_3
 import com.campmeds.app.data.MIGRATION_3_4
+import com.campmeds.app.data.MIGRATION_5_6
 import com.campmeds.app.data.MIGRATION_4_5
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -57,7 +58,7 @@ class MigrationTest {
     fun migrate1To2To3_keepsAllDataAndAddsSafeDefaults() {
         v1Data()
 
-        val db = helper.runMigrationsAndValidate(dbName, 5, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        val db = helper.runMigrationsAndValidate(dbName, 6, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         // ---- patients (v1 -> v2 backfill still applied) ----
         db.query("SELECT id, name, firstName, lastName, notes, conditions, isArchived FROM patients ORDER BY id").use { c ->
@@ -87,6 +88,19 @@ class MigrationTest {
             assertEquals(0, c.getInt(10))
         }
 
+        // ---- v6 defaults do not invent clinical or staff information ----
+        db.query("SELECT isPrn,createdByUserId,createdByName,sheetName,discontinuedAt FROM medications WHERE id='m1'").use { c ->
+            assertTrue(c.moveToFirst()); assertEquals(0, c.getInt(0))
+            assertTrue(c.isNull(1)); assertTrue(c.isNull(2))
+            assertEquals("Mary Ann Smith Zyrtec", c.getString(3)); assertTrue(c.isNull(4))
+        }
+        db.query("SELECT startDate,endDate,bunk,counselor,division FROM patients WHERE id='p1'").use { c ->
+            assertTrue(c.moveToFirst()); (0..4).forEach { assertTrue(c.isNull(it)) }
+        }
+        db.query("SELECT heldReason FROM dose_logs").use { c -> while (c.moveToNext()) assertTrue(c.isNull(0)) }
+        db.query("SELECT recoveryQuestions,recoveryFailures,recoveryLockedUntil FROM users WHERE id='u1'").use { c ->
+            assertTrue(c.moveToFirst()); assertTrue(c.isNull(0)); assertEquals(0, c.getInt(1)); assertEquals(0L, c.getLong(2))
+        }
         // ---- history untouched ----
         db.query("SELECT COUNT(*) FROM dose_logs WHERE medicationId='m1' AND loggedByUserId='u1'").use { c ->
             assertTrue(c.moveToNext()); assertEquals(2, c.getInt(0))
@@ -129,7 +143,7 @@ class MigrationTest {
             execSQL("INSERT INTO dose_logs (id,medicationId,scheduledFor,status,loggedAt,wasOverride) VALUES ('d1','m1','2026-07-02T08:00','GIVEN','2026-07-02T08:01',0)")
             close()
         }
-        val db = helper.runMigrationsAndValidate(dbName, 5, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        val db = helper.runMigrationsAndValidate(dbName, 6, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
         db.execSQL("PRAGMA foreign_keys = ON")
 
         // Deleting a patient that still has medications is refused (RESTRICT) instead of cascading.
@@ -152,7 +166,7 @@ class MigrationTest {
         // may be lost.
         v1Data()
 
-        val db = helper.runMigrationsAndValidate(dbName, 5, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        val db = helper.runMigrationsAndValidate(dbName, 6, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
         db.query("SELECT COUNT(*) FROM medications").use { c ->
             c.moveToFirst()

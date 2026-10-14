@@ -55,6 +55,8 @@ fun SettingsScreen(
     val patients by repository.observePatients().collectAsState(initial = emptyList())
     val patientsById = remember(patients) { patients.associateBy { it.id } }
 
+    var showRecovery by remember { mutableStateOf(false) }
+    if (showRecovery) com.campmeds.app.ui.login.RecoveryDialog(repository, onDismiss = { showRecovery = false }, enroll = true)
     var editorTarget by remember { mutableStateOf<AdministrationTime?>(null) }
     var showEditor by remember { mutableStateOf(false) }
     var pendingRetime by remember { mutableStateOf<PendingRetime?>(null) }
@@ -64,7 +66,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Administration times") },
+                title = { Text("Settings") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
                 }
@@ -93,6 +95,8 @@ fun SettingsScreen(
                 )
             }
             if (isAdmin) {
+                item { TextButton(onClick = { showRecovery = true }) { Text("Set up my account recovery") } }
+                item { CamperSettings(repository) }
                 item {
                     OutlinedButton(
                         onClick = onOpenImport,

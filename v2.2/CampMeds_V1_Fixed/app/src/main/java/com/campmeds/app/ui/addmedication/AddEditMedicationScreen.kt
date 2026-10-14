@@ -57,6 +57,10 @@ fun AddEditMedicationScreen(
     val scope = rememberCoroutineScope()
     val isEditing = medicationId != null
 
+    val settings by repository.observeSettings().collectAsState(initial = emptyMap())
+    var isPrn by remember { mutableStateOf<Boolean?>(null) }
+    var showDiscontinue by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf<List<com.campmeds.app.data.entity.ChangeHistoryEntry>>(emptyList()) }
     var ndc by remember { mutableStateOf("") }
     /** The exact NDC that name/strength/form currently belong to (null = details not established). */
     var detailsForNdc by remember { mutableStateOf<String?>(null) }
@@ -124,6 +128,8 @@ fun AddEditMedicationScreen(
             val definitionsById = repository.getAdministrationTimes().associateBy { it.id }
             repository.getMedication(medicationId)?.let { med ->
                 existing = med
+                isPrn = med.isPrn
+                history = repository.medicationHistory(med.id)
                 ndc = med.ndc
                 detailsForNdc = med.ndc
                 name = med.name
@@ -485,22 +491,10 @@ fun AddEditMedicationScreen(
             }
             scheduleError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-            OutlinedTextField(
-                value = startText,
-                onValueChange = { startText = it; startError = null; endError = null },
-                label = { Text("Start date (YYYY-MM-DD)") },
-                isError = startError != null,
-                supportingText = { startError?.let { Text(it) } },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = endText,
-                onValueChange = { endText = it; endError = null },
-                label = { Text("End date (optional, YYYY-MM-DD)") },
-                isError = endError != null,
-                supportingText = { endError?.let { Text(it) } },
-                modifier = Modifier.fillMaxWidth()
-            )
+            com.campmeds.app.ui.common.DatePresetField("Start date", startText, { startText = it }, settings["startPresets"].orEmpty())
+            startError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            com.campmeds.app.ui.common.DatePresetField("End date", endText, { endText = it }, settings["endPresets"].orEmpty())
+            endError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             OutlinedTextField(
                 value = expirationText,
                 onValueChange = { expirationText = it; expirationError = null },
@@ -627,6 +621,20 @@ fun AddEditMedicationScreen(
             }
 
             HorizontalDivider()
+            Text("PRN / as-needed medication (required)")
+            Row {
+                FilterChip(selected = isPrn == true, onClick = { isPrn = true }, label = { Text("Yes — PRN") })
+                FilterChip(selected = isPrn == false, onClick = { isPrn = false }, label = { Text("No — scheduled") })
+            }
+            Text("PRN identifies as-needed orders; configured times are review opportunities, not instructions to give automatically.")
+            existing?.let { med ->
+                Text("Created by: ${med.createdByName ?: "Unknown (legacy record)"} · ${med.createdAt ?: "Date unknown"}")
+                Text("Sheet: ${med.sheetName.orEmpty()}")
+                med.effectiveEndDate?.let { Text("Discontinued $it") }
+                Text("Medication change history", style = MaterialTheme.typography.titleSmall)
+                history.forEach { Text("${it.changedAt} · ${it.field}: ${it.oldValue ?: "—"} → ${it.newValue ?: "—"}") }
+                if (med.discontinuedAt == null) OutlinedButton(onClick = { showDiscontinue = true }) { Text("End medication early") }
+            }
             Text("QR code for bag/bottle label", style = MaterialTheme.typography.titleMedium)
             val currentExisting = existing
             val identityChanging = currentExisting != null && MedicationIdentity.changed(
@@ -638,8 +646,7 @@ fun AddEditMedicationScreen(
                     "The QR code is created when you save. Then print, save or share it from here or from the patient's details."
                 )
                 identityChanging -> Text(
-                    "You changed the medication's name, NDC, strength or form. Saving creates a NEW medication record with a " +
-                        "new QR code; the old record, its history and its QR code are kept (the old one is retired).",
+                    "Saving keeps this medication, sheet name and QR code. A dated change entry preserves the previous and new values. Verify the updated label before dosing.",
                     color = MaterialTheme.colorScheme.error
                 )
                 else -> {
@@ -655,6 +662,7 @@ fun AddEditMedicationScreen(
 
             Spacer(Modifier.height(8.dp))
             Button(
+                enabled = isPrn != null,
                 onClick = {
                     // ---- validate everything; nothing is saved unless every field passes ----
                     val ndcKey = ndc.trim()
@@ -701,7 +709,7 @@ fun AddEditMedicationScreen(
                         InputValidation.validateDateRange(start, end)?.let { endError = it; ok = false }
                     }
 
-                    if (!ok || start == null) return@Button
+                    if (!ok || start == null || isPrn == null) return@Button
 
                     val medication = (existing ?: Medication(
                         patientId = patientId,
@@ -715,6 +723,7 @@ fun AddEditMedicationScreen(
                         qrCode = qrCode,
                         purpose = purpose.trim().ifBlank { null }
                     )).copy(
+                        isPrn = isPrn == true,
                         ndc = ndcKey,
                         name = name,
                         strength = strength,
@@ -766,6 +775,16 @@ fun AddEditMedicationScreen(
         }
     }
 
+    if (showDiscontinue) AlertDialog(
+        onDismissRequest = { showDiscontinue = false },
+        title = { Text("End medication now?") },
+        text = { Text("This stops all further doses immediately, effective ${LocalDate.now()}. The prescribed end date, sheet and all administration history are kept. This cannot be undone from this form.") },
+        confirmButton = { TextButton(onClick = {
+            showDiscontinue = false
+            existing?.let { scope.launch { repository.discontinueMedication(it.id); onDone() } }
+        }) { Text("Discontinue") } },
+        dismissButton = { TextButton(onClick = { showDiscontinue = false }) { Text("Cancel") } }
+    )
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },

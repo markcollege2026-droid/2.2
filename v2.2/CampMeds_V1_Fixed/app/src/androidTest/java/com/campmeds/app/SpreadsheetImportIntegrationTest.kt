@@ -169,7 +169,7 @@ class SpreadsheetImportIntegrationTest {
     }
 
     @Test
-    fun identityChange_archivesOldRecord_andKeepsItsHistory() = runBlocking {
+    fun identityChange_updatesInPlace_andKeepsItsHistory() = runBlocking {
         val (patient, medication, log) = seedPatientWithMedicationAndHistory()
         val repo = SpreadsheetImportRepository(db, backups = null)
         val updateColumns = HeaderMapper.suggest(headers, ImportMode.UPDATE_EXISTING).columns
@@ -180,10 +180,12 @@ class SpreadsheetImportIntegrationTest {
         val outcome = repo.apply(admin, s, updateColumns, ImportMode.UPDATE_EXISTING, decisions, plan.signature())
         assertTrue(outcome is SpreadsheetImportRepository.Outcome.Completed)
 
-        assertTrue(db.medicationDao().getById(medication.id)?.isArchived == true)
+        assertTrue(db.medicationDao().getById(medication.id)?.isArchived == false)
+        assertEquals("Metformin XR", db.medicationDao().getById(medication.id)?.name)
+        assertEquals(medication.qrCode, db.medicationDao().getById(medication.id)?.qrCode)
         assertEquals(log.medicationId, medication.id)
         assertEquals(1, db.doseLogDao().getAll().size)
-        assertEquals(2, db.medicationDao().getAllIncludingArchived().size)
+        assertEquals(1, db.medicationDao().getAllIncludingArchived().size)
     }
 
     @Test

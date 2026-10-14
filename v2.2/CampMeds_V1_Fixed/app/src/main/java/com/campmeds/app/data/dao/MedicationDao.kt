@@ -16,7 +16,8 @@ interface MedicationDao {
     @Query(
         """
         SELECT * FROM medications
-        WHERE isArchived = 0 AND startDate <= :today AND (endDate IS NULL OR endDate >= :today)
+        WHERE isArchived = 0 AND discontinuedAt IS NULL AND startDate <= :today AND (endDate IS NULL OR endDate >= :today)
+        AND patientId IN (SELECT id FROM patients WHERE isArchived = 0 AND (startDate IS NULL OR startDate <= :today) AND (endDate IS NULL OR endDate >= :today))
         """
     )
     suspend fun getActiveOn(today: String): List<Medication>
@@ -25,7 +26,8 @@ interface MedicationDao {
     @Query(
         """
         SELECT * FROM medications
-        WHERE isArchived = 0 AND startDate <= :today AND (endDate IS NULL OR endDate >= :today)
+        WHERE isArchived = 0 AND discontinuedAt IS NULL AND startDate <= :today AND (endDate IS NULL OR endDate >= :today)
+        AND patientId IN (SELECT id FROM patients WHERE isArchived = 0 AND (startDate IS NULL OR startDate <= :today) AND (endDate IS NULL OR endDate >= :today))
         """
     )
     fun observeActiveOn(today: String): Flow<List<Medication>>

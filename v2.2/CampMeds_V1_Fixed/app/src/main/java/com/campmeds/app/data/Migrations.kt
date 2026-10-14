@@ -172,3 +172,34 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_change_history_importId` ON `change_history` (`importId`)")
     }
 }
+
+/** Additive migration. No history rows, IDs or QR labels are replaced or removed. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        for (column in listOf("startDate", "endDate", "bunk", "counselor", "division")) {
+            db.execSQL("ALTER TABLE patients ADD COLUMN `$column` TEXT")
+        }
+        db.execSQL("ALTER TABLE medications ADD COLUMN isPrn INTEGER NOT NULL DEFAULT 0")
+        for (column in listOf("createdByUserId", "createdByName", "createdAt", "sheetName", "effectiveEndDate", "discontinuedAt")) {
+            db.execSQL("ALTER TABLE medications ADD COLUMN `$column` TEXT")
+        }
+        db.execSQL("ALTER TABLE dose_logs ADD COLUMN heldReason TEXT")
+        for (column in listOf("recoveryQuestions", "recoverySalt", "recoveryHashes")) {
+            db.execSQL("ALTER TABLE users ADD COLUMN `$column` TEXT")
+        }
+        db.execSQL("ALTER TABLE users ADD COLUMN recoveryFailures INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE users ADD COLUMN recoveryLockedUntil INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE IF NOT EXISTS camp_settings (`key` TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(`key`))")
+        // Freeze the existing export's names, including collision suffixes, before any details change.
+        data class Sheet(val id: String, val patient: String, val medication: String, val start: String)
+        val rows = mutableListOf<Sheet>()
+        db.query("SELECT m.id, p.name, m.name, m.startDate FROM medications m JOIN patients p ON p.id=m.patientId ORDER BY m.name ASC").use { c ->
+            while (c.moveToNext()) rows += Sheet(c.getString(0), c.getString(1), c.getString(2), c.getString(3))
+        }
+        val used = hashSetOf<String>()
+        rows.sortedWith(compareBy({ it.patient.lowercase() }, { it.medication.lowercase() }, { it.start })).forEach {
+            val name = com.campmeds.app.export.SheetNames.unique(com.campmeds.app.export.SheetNames.baseName(it.patient, it.medication), used)
+            db.execSQL("UPDATE medications SET sheetName=? WHERE id=?", arrayOf(name, it.id))
+        }
+    }
+}
