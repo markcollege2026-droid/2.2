@@ -39,7 +39,8 @@ data class AdministrationTimeUsage(
 
 class CampMedsRepository(
     private val db: AppDatabase,
-    private val ndcApiClient: NdcApiClient = NdcApiClient()
+    private val ndcApiClient: NdcApiClient = NdcApiClient(),
+    private val days: Flow<LocalDate> = localDays()
 ) {
     // ---------------- Auth ----------------
 
@@ -120,11 +121,11 @@ class CampMedsRepository(
 
     // ---------------- Patients ----------------
 
-    fun observePatients(): Flow<List<Patient>> = combine(db.patientDao().observeIncludingArchived(), localDays()) {
+    fun observePatients(): Flow<List<Patient>> = combine(db.patientDao().observeIncludingArchived(), days) {
         patients, day -> patients.filter { it.isActiveOn(day) }
     }
 
-    fun observeArchive(): Flow<List<Patient>> = combine(db.patientDao().observeIncludingArchived(), localDays()) {
+    fun observeArchive(): Flow<List<Patient>> = combine(db.patientDao().observeIncludingArchived(), days) {
         patients, day -> patients.filterNot { it.isActiveOn(day) }
     }
 

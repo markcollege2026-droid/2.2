@@ -119,7 +119,7 @@ class SpreadsheetPlannerTest {
             mapOf("First Name" to "Ana", "Last Name" to "Lopez", "Medication" to "Aspirin", "Dosage Instructions" to "81 mg",
                 "Schedule Times" to "09:00", "Start Date" to "2026-07-01", "PRN" to "No"),
             mapOf("First Name" to "ana", "Last Name" to "LOPEZ", "Medication" to "Vitamin D", "Dosage Instructions" to "1",
-                "Schedule Times" to "12:00", "Start Date" to "2026-07-02")
+                "Schedule Times" to "12:00", "Start Date" to "2026-07-02", "PRN" to "Yes")
         )
         val plan = newRecords(sheet)
         assertEquals(1, plan.patientCreates.size)
@@ -460,4 +460,18 @@ class SpreadsheetPlannerTest {
         assertEquals(setOf(Field.PATIENT_ID, Field.MEDICATION_ID), mapping.missingRequired.toSet())
         assertTrue(mapping.needsReview)
     }
+    @Test fun newMedicationRequiresExplicitPrnChoiceAndUpdateBlankKeepsIt() {
+        val row = mapOf("First Name" to "Camper", "Medication" to "Example", "Dosage Instructions" to "1",
+            "Schedule Times" to "08:00", "Start Date" to "2026-07-01")
+        assertTrue(newRecords(sheetOf(row)).issues.any { it.field == "PRN" })
+        val yes = newRecords(sheetOf(row + ("PRN" to "Yes")))
+        assertTrue(yes.medicationCreates.single().draft.isPrn)
+        val no = newRecords(sheetOf(row + ("PRN" to "No")))
+        assertFalse(no.medicationCreates.single().draft.isPrn)
+        assertTrue(newRecords(sheetOf(row + ("PRN" to "maybe"))).issues.any { it.field == "PRN" })
+        val prnSnapshot = baseSnapshot.copy(medications = baseSnapshot.medications.map { it.copy(isPrn = true) })
+        val changed = update(sheetOf(updateRow(p1, m1, "Dosage Instructions" to "2 tablets")), prnSnapshot)
+        assertTrue(changed.medicationUpdates.single().target.isPrn)
+    }
+
 }
