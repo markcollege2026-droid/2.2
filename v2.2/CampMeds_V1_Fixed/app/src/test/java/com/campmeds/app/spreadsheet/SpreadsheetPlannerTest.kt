@@ -17,7 +17,7 @@ class SpreadsheetPlannerTest {
     private val headers = listOf(
         "Patient ID", "Medication ID", "First Name", "Last Name", "Date of Birth", "Notes", "Conditions",
         "Medication", "NDC", "Strength", "Form", "Dosage Instructions", "Schedule Times", "Start Date",
-        "End Date", "Bottle Expiration", "Purpose"
+        "End Date", "Bottle Expiration", "Purpose", "PRN"
     )
 
     private val p1 = "11111111-1111-4111-8111-111111111111"
@@ -115,9 +115,9 @@ class SpreadsheetPlannerTest {
     fun repeatedPatientRows_createOnePatient_andOneMedicationPerRow() {
         val sheet = sheetOf(
             mapOf("First Name" to "Ana", "Last Name" to "Lopez", "Medication" to "Insulin", "Dosage Instructions" to "10 units",
-                "Schedule Times" to "08:00", "Start Date" to "2026-07-01"),
+                "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No"),
             mapOf("First Name" to "Ana", "Last Name" to "Lopez", "Medication" to "Aspirin", "Dosage Instructions" to "81 mg",
-                "Schedule Times" to "09:00", "Start Date" to "2026-07-01"),
+                "Schedule Times" to "09:00", "Start Date" to "2026-07-01", "PRN" to "No"),
             mapOf("First Name" to "ana", "Last Name" to "LOPEZ", "Medication" to "Vitamin D", "Dosage Instructions" to "1",
                 "Schedule Times" to "12:00", "Start Date" to "2026-07-02")
         )
@@ -134,9 +134,9 @@ class SpreadsheetPlannerTest {
     fun newRecords_sameNameWithConflictingDob_isConflictAndCreatesNothing() {
         val sheet = sheetOf(
             mapOf("First Name" to "Sam", "Last Name" to "Park", "Date of Birth" to "2014-01-05",
-                "Medication" to "Ibuprofen", "Dosage Instructions" to "1", "Schedule Times" to "08:00", "Start Date" to "2026-07-01"),
+                "Medication" to "Ibuprofen", "Dosage Instructions" to "1", "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No"),
             mapOf("First Name" to "Sam", "Last Name" to "Park", "Date of Birth" to "2012-09-30",
-                "Medication" to "Cetirizine", "Dosage Instructions" to "1", "Schedule Times" to "08:00", "Start Date" to "2026-07-01")
+                "Medication" to "Cetirizine", "Dosage Instructions" to "1", "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No")
         )
         val plan = newRecords(sheet)
         assertTrue(plan.patientCreates.isEmpty())
@@ -149,7 +149,7 @@ class SpreadsheetPlannerTest {
         val snap = snapshot(patients = listOf(patient(p1, "Mary", "Smith", LocalDate.of(1990, 5, 5))))
         val sheet = sheetOf(
             mapOf("First Name" to "Mary", "Last Name" to "Smith", "Medication" to "Lisinopril", "Dosage Instructions" to "1",
-                "Schedule Times" to "08:00", "Start Date" to "2026-07-01")
+                "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No")
         )
         val undecided = newRecords(sheet, snap)
         assertEquals(listOf("name:mary smith"), undecided.unresolvedDecisions)
@@ -176,7 +176,7 @@ class SpreadsheetPlannerTest {
         )
         val sheet = sheetOf(
             mapOf("First Name" to "Mary", "Last Name" to "Smith", "Medication" to "lisinopril", "Strength" to "10 MG",
-                "Form" to "tablet", "Dosage Instructions" to "1", "Schedule Times" to "08:00", "Start Date" to "2026-07-01")
+                "Form" to "tablet", "Dosage Instructions" to "1", "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No")
         )
         val decided = newRecords(
             sheet, snap,
@@ -214,7 +214,7 @@ class SpreadsheetPlannerTest {
     @Test
     fun newRecords_missingRequiredMedicationFields_areInvalidWithRowAndField() {
         val sheet = sheetOf(
-            mapOf("First Name" to "Ben", "Medication" to "Amoxicillin", "Schedule Times" to "08:00", "Start Date" to "2026-07-01")
+            mapOf("First Name" to "Ben", "Medication" to "Amoxicillin", "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No")
         )
         val plan = newRecords(sheet)
         val issue = plan.issues.single { it.kind == IssueKind.INVALID_ROW }
@@ -364,7 +364,7 @@ class SpreadsheetPlannerTest {
     }
 
     @Test
-    fun update_identityChange_isFlagged_forArchiveAndReplace() {
+    fun update_identityChange_isFlagged_forDatedHistory() {
         val withHistory = snapshot(
             patients = listOf(patient(p1, "Mary", "Smith")),
             medications = listOf(medication(m1, p1)),

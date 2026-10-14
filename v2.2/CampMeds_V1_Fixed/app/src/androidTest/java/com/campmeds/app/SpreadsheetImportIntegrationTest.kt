@@ -42,7 +42,7 @@ class SpreadsheetImportIntegrationTest {
     private val headers = listOf(
         "Patient ID", "Medication ID", "First Name", "Last Name", "Date of Birth", "Notes", "Conditions",
         "Medication", "NDC", "Strength", "Form", "Dosage Instructions", "Schedule Times", "Start Date",
-        "End Date", "Bottle Expiration", "Purpose"
+        "End Date", "Bottle Expiration", "Purpose", "PRN"
     )
 
     @Before
@@ -102,7 +102,7 @@ class SpreadsheetImportIntegrationTest {
         val repo = SpreadsheetImportRepository(db, backups = null)
         val s = sheet(
             mapOf("First Name" to "Zoe", "Last Name" to "Quinn", "Medication" to "Aspirin",
-                "Dosage Instructions" to "81 mg", "Schedule Times" to "08:00", "Start Date" to "2026-07-01")
+                "Dosage Instructions" to "81 mg", "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No")
         )
         val plan = repo.preview(s, columns, ImportMode.NEW_RECORDS, ImportDecisions())
         val outcome = repo.apply(admin, s, columns, ImportMode.NEW_RECORDS, ImportDecisions(), plan.signature())
@@ -119,7 +119,7 @@ class SpreadsheetImportIntegrationTest {
         val repo = SpreadsheetImportRepository(db, backups = null, beforeCommit = { error("simulated failure") })
         val s = sheet(
             mapOf("First Name" to "Yan", "Medication" to "Vitamin C", "Dosage Instructions" to "1",
-                "Schedule Times" to "09:00", "Start Date" to "2026-07-01")
+                "Schedule Times" to "09:00", "Start Date" to "2026-07-01", "PRN" to "No")
         )
         val plan = repo.preview(s, columns, ImportMode.NEW_RECORDS, ImportDecisions())
         val outcome = repo.apply(admin, s, columns, ImportMode.NEW_RECORDS, ImportDecisions(), plan.signature())
@@ -169,7 +169,7 @@ class SpreadsheetImportIntegrationTest {
     }
 
     @Test
-    fun identityChange_archivesOldRecord_andKeepsItsHistory() = runBlocking {
+    fun identityChange_keepsRecordAndHistory() = runBlocking {
         val (patient, medication, log) = seedPatientWithMedicationAndHistory()
         val repo = SpreadsheetImportRepository(db, backups = null)
         val updateColumns = HeaderMapper.suggest(headers, ImportMode.UPDATE_EXISTING).columns
@@ -180,10 +180,10 @@ class SpreadsheetImportIntegrationTest {
         val outcome = repo.apply(admin, s, updateColumns, ImportMode.UPDATE_EXISTING, decisions, plan.signature())
         assertTrue(outcome is SpreadsheetImportRepository.Outcome.Completed)
 
-        assertTrue(db.medicationDao().getById(medication.id)?.isArchived == true)
+        assertTrue(db.medicationDao().getById(medication.id)?.isArchived == false)
         assertEquals(log.medicationId, medication.id)
         assertEquals(1, db.doseLogDao().getAll().size)
-        assertEquals(2, db.medicationDao().getAllIncludingArchived().size)
+        assertEquals(1, db.medicationDao().getAllIncludingArchived().size)
     }
 
     @Test
@@ -206,7 +206,7 @@ class SpreadsheetImportIntegrationTest {
     fun nonAdministrator_cannotApplyImport() = runBlocking {
         val repo = SpreadsheetImportRepository(db, backups = null)
         val s = sheet(mapOf("First Name" to "Ivy", "Medication" to "X", "Dosage Instructions" to "1",
-            "Schedule Times" to "08:00", "Start Date" to "2026-07-01"))
+            "Schedule Times" to "08:00", "Start Date" to "2026-07-01", "PRN" to "No"))
         val plan = repo.preview(s, columns, ImportMode.NEW_RECORDS, ImportDecisions())
         val outcome = repo.apply(provider, s, columns, ImportMode.NEW_RECORDS, ImportDecisions(), plan.signature())
         assertTrue(outcome is SpreadsheetImportRepository.Outcome.Rejected)

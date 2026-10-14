@@ -63,7 +63,7 @@ data class MedicationCreate(val rowNumber: Int, val newPatientKey: String?, val 
 
 /**
  * [identityChanged] flags name, NDC, strength or form changes for review. The same record is retained.
- * with its history and a new record with a new id and QR code replaces it. The change is listed and confirmed.
+ * The change is listed and confirmed; previous values remain in the field-level history.
  */
 data class MedicationUpdate(
     val medicationId: String,

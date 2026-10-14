@@ -44,7 +44,7 @@ class HistoryIntegrityTest {
         val user = User(name = "T$tag", role = Role.ADMIN, pinHash = "h", pinSalt = "s")
         db.userDao().upsert(user) // the user must exist before a dose can reference it
         repo.recordDose(med.id, due, DoseStatus.GIVEN, user.id)
-        return Triple(saved, med, due)
+        return Triple(saved, repo.getMedication(med.id)!!, due)
     }
 
     @Test fun deletingPatientKeepsHistoryAndExportRows() = runBlocking {
@@ -70,20 +70,20 @@ class HistoryIntegrityTest {
         assertTrue(repo.loadExportData().sheets.any { it.medication.id == med.id })
     }
 
-    @Test fun renamingAMedicationCreatesANewRecordAndKeepsTheOldOne() = runBlocking {
+    @Test fun renamingKeepsIdQrSheetAndAppendsOldAndNewValues() = runBlocking {
         val tag = UUID.randomUUID().toString().take(6)
         val (patient, med, _) = seed(tag)
-
-        val replacement = repo.saveMedicationEdit(med, med.copy(name = "Beta$tag"))
-
-        assertNotEquals(med.id, replacement.id)
-        assertNotEquals(med.qrCode, replacement.qrCode)
-        assertTrue(db.medicationDao().getById(med.id)!!.isArchived)
-        assertEquals("Alpha$tag", db.medicationDao().getById(med.id)!!.name)       // old record untouched
-        assertEquals("Beta$tag", db.medicationDao().getById(replacement.id)!!.name)
-        assertEquals(1, db.doseLogDao().getAll().count { it.medicationId == med.id }) // old history still on the old record
+        val edited = repo.saveMedicationEdit(med, med.copy(name = "Beta$tag"))
+        assertEquals(med.id, edited.id)
+        assertEquals(med.qrCode, edited.qrCode)
+        assertEquals(med.sheetName, edited.sheetName)
+        assertFalse(edited.isArchived)
         val sheets = repo.loadExportData().sheets.filter { it.medication.patientId == patient.id }
-        assertEquals(setOf("Alpha$tag", "Beta$tag"), sheets.map { it.medication.name }.toSet())
+        assertEquals(1, sheets.size)
+        assertEquals(1, sheets.single().doseLogs.size)
+        val change = sheets.single().changes.single { it.field == "Name" }
+        assertEquals(med.name, change.oldValue)
+        assertEquals("Beta$tag", change.newValue)
     }
 
     @Test fun nonIdentityEditUpdatesInPlace() = runBlocking {

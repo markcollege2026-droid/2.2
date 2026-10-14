@@ -117,43 +117,7 @@ fun PatientDueScreen(
     val currentUser by Session.currentUser.collectAsState()
 
     val entries = remember(now, activeMeds, todaysLogs, patient) {
-        if (recordMessage != null) AlertDialog(onDismissRequest = { recordMessage = null },
-        title = { Text("Dose not recorded") }, text = { Text(recordMessage!!) },
-        confirmButton = { TextButton(onClick = { recordMessage = null }) { Text("OK") } })
-
-    if (showMedicationScan) ModalBottomSheet(onDismissRequest = { showMedicationScan = false }) {
-        Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Scan medication for ${patient?.name.orEmpty()}", style = MaterialTheme.typography.titleMedium)
-            if (scannedMedication == null) key(scanKey) {
-                MedicationScanStep(scanTarget = "the medication label", onScanSkipped = { showMedicationScan = false }, onCode = { code ->
-                    scope.launch {
-                        val med = repository.getMedicationByQr(code)
-                        if (med == null || med.patientId != patientId) scanMessage = "This label does not belong to this patient's medication."
-                        else { scannedMedication = med; scanMessage = null }
-                    }
-                })
-            }
-            scannedMedication?.let { med ->
-                val recorded = todaysLogs.filter { it.medicationId == med.id }.sortedBy { it.scheduledFor }
-                if (recorded.isNotEmpty()) {
-                    Text("Warning: doses already recorded today. Do not give them again.", color = MaterialTheme.colorScheme.error)
-                    recorded.forEach { Text("${it.scheduledFor.toLocalTime()}: ${it.status}") }
-                }
-                val available = entries.flatMap { it.items }.filter { it.medication.id == med.id }
-                if (available.isEmpty()) Text("No unrecorded dose is currently due. Nothing will be recorded.")
-                available.forEach { item ->
-                    OutlinedButton(onClick = { fromScan = true; selectedItem = item; showMedicationScan = false }) {
-                        Text("Verify ${med.name} — ${item.scheduledFor.toLocalTime()} (not recorded)")
-                    }
-                }
-            }
-            scanMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            TextButton(onClick = { scannedMedication = null; scanMessage = null; scanKey++ }) { Text("Scan again") }
-            TextButton(onClick = { showMedicationScan = false }) { Text("Close") }
-        }
-    }
-
-    val currentPatient = patient ?: return@remember emptyList()
+        val currentPatient = patient ?: return@remember emptyList()
         dueEntriesForPatient(
             buildCurrentDueList(
                 now = now,
