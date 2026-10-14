@@ -474,4 +474,13 @@ class SpreadsheetPlannerTest {
         assertTrue(changed.medicationUpdates.single().target.isPrn)
     }
 
+    @Test fun newPrnNeedsNoTimeButScheduledMedicationStillDoes() {
+        val row = mapOf("First Name" to "Camper", "Medication" to "Example", "Dosage Instructions" to "As prescribed",
+            "Start Date" to "2026-07-01", "PRN" to "Yes")
+        val plan = newRecords(sheetOf(row))
+        assertTrue(plan.issues.isEmpty())
+        assertTrue(plan.medicationCreates.single().draft.scheduleTimes.isEmpty())
+        assertTrue(newRecords(sheetOf(row + ("PRN" to "No"))).issues.any { it.field == "Schedule Times" })
+    }
+
 }

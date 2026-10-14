@@ -8,6 +8,7 @@ import com.campmeds.app.data.AppDatabase
 import com.campmeds.app.data.MIGRATION_1_2
 import com.campmeds.app.data.MIGRATION_2_3
 import com.campmeds.app.data.MIGRATION_3_4
+import com.campmeds.app.data.MIGRATION_6_7
 import com.campmeds.app.data.MIGRATION_5_6
 import com.campmeds.app.data.MIGRATION_4_5
 import org.junit.Assert.assertEquals
@@ -58,7 +59,7 @@ class MigrationTest {
     fun migrate1To2To3_keepsAllDataAndAddsSafeDefaults() {
         v1Data()
 
-        val db = helper.runMigrationsAndValidate(dbName, 6, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        val db = helper.runMigrationsAndValidate(dbName, 7, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         // ---- patients (v1 -> v2 backfill still applied) ----
         db.query("SELECT id, name, firstName, lastName, notes, conditions, isArchived FROM patients ORDER BY id").use { c ->
@@ -130,7 +131,7 @@ class MigrationTest {
             execSQL("INSERT INTO dose_logs (id,medicationId,scheduledFor,status,loggedAt,wasOverride) VALUES ('d1','m1','2026-07-02T08:00','GIVEN','2026-07-02T08:01',0)")
             close()
         }
-        val db = helper.runMigrationsAndValidate(dbName, 6, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        val db = helper.runMigrationsAndValidate(dbName, 7, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
         db.execSQL("PRAGMA foreign_keys = ON")
 
         // Deleting a patient that still has medications is refused (RESTRICT) instead of cascading.
@@ -153,7 +154,7 @@ class MigrationTest {
         // may be lost.
         v1Data()
 
-        val db = helper.runMigrationsAndValidate(dbName, 6, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        val db = helper.runMigrationsAndValidate(dbName, 7, true, MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
         db.query("SELECT COUNT(*) FROM medications").use { c ->
             c.moveToFirst()
@@ -167,8 +168,8 @@ class MigrationTest {
     }
     @Test fun migration6PreservesHistoryAndAddsDefaultsWithoutInventingCreators() {
         v1Data()
-        val db = helper.runMigrationsAndValidate(dbName, 6, true,
-            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        val db = helper.runMigrationsAndValidate(dbName, 7, true,
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
         db.query("SELECT isPrn,createdByUserId,createdByName,discontinuedOn,sheetName FROM medications WHERE id='m1'").use {
             assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0))
             assertTrue(it.isNull(1)); assertTrue(it.isNull(2)); assertTrue(it.isNull(3))
