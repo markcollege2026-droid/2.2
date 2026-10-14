@@ -62,4 +62,24 @@ real-device permission dialogs and installation over a camp's signed production 
 testing. To preserve installed data, use the same signing certificate; do not uninstall to resolve a debug-key
 signature mismatch. CI-only test dependencies add no cloud functionality.
 
-Final build/test results will be recorded after the GitHub Actions run completes.
+## Verified build and results
+
+Source commit: `67f355271baf48f13586de275f63ebd2c1026a69` (the final follow-up commit only updates this report).
+[GitHub Actions run 38641750924](https://github.com/markcollege2026-droid/2.2/actions/runs/38641750924)
+completed successfully:
+
+- Debug APK: **built and uploaded**, versionCode **4**, versionName **1.3-prototype**.
+- JVM unit tests: **172 passed, 0 failed, 0 errors, 0 skipped**.
+- Android API-30 emulator tests: **47 passed, 0 failed, 0 errors, 0 skipped**.
+- Includes the pre-existing regression suite and new repository, Room migration/JSON-persistence,
+  PRN patient-screen/physical-confirmation, division-filter, action-removal and scanner-layout tests.
+- Room's final generated schema 7 exactly matches the included schema file; `git diff --check` passed.
+
+The first device run found constructor-parameter converter annotations falling back to the old comma
+codec. Explicit field-level JSON converters fixed it; direct Room round-trip tests now cover commas,
+quotes and Unicode in patient, settings and association lists. No known build or automated-test failure
+remains. Hardware/signing limitations listed above remain unverified, not claimed as passed.
+
+The delivery ZIP contains only files added or modified relative to `3243ab0`, at their original repository
+paths. It is an overlay for that previous delivery, not a complete standalone project. No files need deletion.
+
