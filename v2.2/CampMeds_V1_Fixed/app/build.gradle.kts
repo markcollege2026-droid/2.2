@@ -12,8 +12,8 @@ android {
         applicationId = "com.campmeds.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1-prototype"
+        versionCode = 3
+        versionName = "1.2-prototype"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

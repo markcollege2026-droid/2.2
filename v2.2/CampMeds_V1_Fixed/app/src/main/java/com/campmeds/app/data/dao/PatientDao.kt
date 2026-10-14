@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
  */
 @Dao
 interface PatientDao {
+    @Query("SELECT * FROM patients ORDER BY name ASC")
+    fun observeIncludingArchived(): Flow<List<Patient>>
+
     @Query("SELECT * FROM patients WHERE isArchived = 0 ORDER BY name ASC")
     fun observeAll(): Flow<List<Patient>>
 
@@ -26,7 +29,7 @@ interface PatientDao {
     @Query("SELECT * FROM patients ORDER BY name ASC")
     suspend fun getAllIncludingArchived(): List<Patient>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsert(patient: Patient)
 
     @Query("UPDATE patients SET isArchived = 1 WHERE id = :id")

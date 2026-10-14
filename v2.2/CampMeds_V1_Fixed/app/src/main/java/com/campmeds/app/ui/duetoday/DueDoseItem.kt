@@ -5,6 +5,7 @@ import com.campmeds.app.data.entity.DoseStatus
 import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Patient
 import java.time.LocalDateTime
+import com.campmeds.app.domain.isActiveOn
 
 /** One medication dose on a due list. */
 data class DueDoseItem(
@@ -136,8 +137,8 @@ fun buildCurrentDueList(
     val logged = todaysLogs.mapTo(HashSet()) { it.medicationId to it.scheduledFor }
 
     return activeMedications.flatMap { med ->
-        if (med.isArchived) return@flatMap emptyList<DueDoseItem>()
-        val patient = patientsById[med.patientId]?.takeUnless { it.isArchived }
+        if (!med.isActiveOn(day)) return@flatMap emptyList<DueDoseItem>()
+        val patient = patientsById[med.patientId]?.takeIf { it.isActiveOn(day) }
             ?: return@flatMap emptyList<DueDoseItem>()
         med.scheduleTimes.mapNotNull { time ->
             val scheduledFor = day.atTime(time)

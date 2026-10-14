@@ -75,5 +75,13 @@ data class Medication(
     /** "What is this medication for?" Shown only on the patient's details screen, never when dosing. */
     val purpose: String? = null,
     /** "Deleted" or replaced (renamed) medications are archived, never hard-deleted, so history stays. */
-    val isArchived: Boolean = false
+    val isArchived: Boolean = false,
+    @androidx.room.ColumnInfo(defaultValue = "0") val isPrn: Boolean = false,
+    val createdByUserId: String? = null,
+    val createdByName: String? = null,
+    val createdAt: java.time.LocalDateTime? = null,
+    /** Stable export name allocated at creation/migration, never derived again after an edit. */
+    val sheetName: String? = null,
+    /** Effective discontinuation day: no further doses on or after this day. Original endDate stays intact. */
+    val discontinuedOn: LocalDate? = null
 )

@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.campmeds.app.auth.Session
+import com.campmeds.app.domain.isActiveOn
 import com.campmeds.app.data.entity.Patient
 import com.campmeds.app.data.entity.Role
 import com.campmeds.app.repository.CampMedsRepository
@@ -130,7 +131,7 @@ fun TodaysDueScreen(
                         Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan patient QR")
                     }
                     IconButton(onClick = onOpenPatients) { Icon(Icons.Default.List, contentDescription = "Patients") }
-                    if (isAdmin) {
+                    if (currentUser != null) {
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Default.Settings, contentDescription = "Administration times")
                         }
@@ -292,8 +293,8 @@ private fun PatientScanSheet(
                                     return@launch
                                 }
                                 val patient = repository.getPatient(patientId)
-                                if (patient == null || patient.isArchived) {
-                                    message = "This patient was not found. They may have been deleted."
+                                if (patient == null || !patient.isActiveOn(LocalDate.now())) {
+                                    message = "This camper is not active today. Check Archive / future campers to view their records."
                                 } else {
                                     onPatientFound(patient)
                                 }

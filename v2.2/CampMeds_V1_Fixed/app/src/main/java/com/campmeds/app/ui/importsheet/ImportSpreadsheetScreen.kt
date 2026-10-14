@@ -437,7 +437,7 @@ private fun PreviewStep(
             )
             if (update.identityChanged) {
                 Text(
-                    "Name, NDC, strength or form changes: the current record is archived with its history and a new record is created.",
+                    "Name, NDC, strength or form changes keep the same sheet, record ID and QR code. Dated history preserves the previous and new values.",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )

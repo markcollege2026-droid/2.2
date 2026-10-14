@@ -163,36 +163,20 @@ class SpreadsheetImportRepository(
                     patientId = patientId,
                     qrCode = UUID.randomUUID().toString(),
                     isException = true,
-                    isArchived = false
+                    isArchived = false,
+                    createdByUserId = actor.id,
+                    createdByName = actor.name,
+                    createdAt = now,
+                    sheetName = com.campmeds.app.export.SheetNames.unique(
+                        com.campmeds.app.export.SheetNames.baseName(db.patientDao().getById(patientId)?.name.orEmpty(), create.draft.name),
+                        db.medicationDao().getAllIncludingArchived().mapNotNull { it.sheetName?.lowercase() }.toMutableSet())
                 )
             )
         }
 
         for (update in plan.medicationUpdates) {
-            if (update.identityChanged) {
-                // Same rule as the app's medication form: the old record is archived (history and export sheet
-                // kept) and the changed medication becomes a new record with its own id and QR code.
-                val replacement = update.target.copy(
-                    id = UUID.randomUUID().toString(),
-                    qrCode = UUID.randomUUID().toString(),
-                    isArchived = false
-                )
-                db.medicationDao().archive(update.medicationId)
-                db.medicationDao().upsert(replacement)
-                changes += ChangeHistoryEntry(
-                    importId = importId,
-                    changedAt = now,
-                    actorUserId = actor.id,
-                    recordType = "MEDICATION",
-                    recordId = update.medicationId,
-                    field = "Replaced by new record",
-                    oldValue = null,
-                    newValue = replacement.id,
-                    significant = true
-                )
-            } else {
-                db.medicationDao().upsert(update.target)
-            }
+            // Stable medication ID, QR and sheet name; append dated old/new values below.
+            db.medicationDao().upsert(update.target)
             update.changes.forEach { changes += historyEntry(importId, now, actor, "MEDICATION", update.medicationId, it) }
         }
 

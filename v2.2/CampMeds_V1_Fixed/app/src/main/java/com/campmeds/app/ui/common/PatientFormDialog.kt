@@ -10,6 +10,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,18 +26,34 @@ fun PatientFormDialog(
     title: String,
     initial: Patient?,
     onDismiss: () -> Unit,
-    onSave: (firstName: String, lastName: String, notes: String?, conditions: String?) -> Unit
+    repository: com.campmeds.app.repository.CampMedsRepository,
+    onSave: (Patient) -> Unit
 ) {
     var first by remember { mutableStateOf(initial?.firstName.orEmpty()) }
     var last by remember { mutableStateOf(initial?.lastName.orEmpty()) }
     var notes by remember { mutableStateOf(initial?.notes.orEmpty()) }
     var conditions by remember { mutableStateOf(initial?.conditions.orEmpty()) }
 
+    val settings by repository.observeSettings().collectAsState(initial = com.campmeds.app.data.entity.CampSettings())
+    var start by remember { mutableStateOf(initial?.startDate?.toString().orEmpty()) }
+    var end by remember { mutableStateOf(initial?.endDate?.toString().orEmpty()) }
+    var bunk by remember { mutableStateOf(initial?.bunk.orEmpty()) }
+    var counselor by remember { mutableStateOf(initial?.counselor.orEmpty()) }
+    var division by remember { mutableStateOf(initial?.division.orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                DatePresetField("Camper start date (optional, YYYY-MM-DD)", start, settings.startDates) { start = it }
+                DatePresetField("Camper end date (inclusive, YYYY-MM-DD)", end, settings.endDates) { end = it }
+                Text("Before the start and after the end date this camper is in Archive / future campers. Blank dates are unrestricted.")
+                OutlinedTextField(value = bunk, onValueChange = { bunk = it }, label = { Text(settings.bunkLabel) })
+                OutlinedTextField(value = counselor, onValueChange = { counselor = it }, label = { Text(settings.counselorLabel) })
+                OutlinedTextField(value = division, onValueChange = { division = it }, label = { Text(settings.divisionLabel) })
+                error?.let { Text(it) }
                 OutlinedTextField(
                     value = first, onValueChange = { first = it }, label = { Text("First name") },
                     singleLine = true, modifier = Modifier.fillMaxWidth()
@@ -61,7 +78,18 @@ fun PatientFormDialog(
         confirmButton = {
             TextButton(
                 enabled = first.isNotBlank(),
-                onClick = { onSave(first.trim(), last.trim(), notes.ifBlank { null }, conditions.ifBlank { null }) }
+                onClick = {
+                    try {
+                        val from = start.trim().takeIf { it.isNotEmpty() }?.let { java.time.LocalDate.parse(it) }
+                        val until = end.trim().takeIf { it.isNotEmpty() }?.let { java.time.LocalDate.parse(it) }
+                        require(from == null || until == null || from <= until)
+                        onSave((initial ?: Patient(name = "")).copy(firstName = first.trim(), lastName = last.trim(),
+                            notes = notes.ifBlank { null }, conditions = conditions.ifBlank { null },
+                            startDate = from, endDate = until, bunk = bunk.trim().ifBlank { null },
+                            counselor = counselor.trim().ifBlank { null }, division = division.trim().ifBlank { null }))
+                    } catch (e: IllegalArgumentException) { error = "Use YYYY-MM-DD dates; end must not precede start." }
+                      catch (e: java.time.format.DateTimeParseException) { error = "Use valid YYYY-MM-DD dates." }
+                }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

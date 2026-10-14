@@ -85,6 +85,12 @@ fun AddEditMedicationScreen(
     var customTimeError by remember { mutableStateOf<String?>(null) }
 
     // ---- per-medication settings ----
+    val campSettings by repository.observeSettings().collectAsState(initial = com.campmeds.app.data.entity.CampSettings())
+    var isPrn by remember { mutableStateOf<Boolean?>(null) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    var showDiscontinue by remember { mutableStateOf(false) }
+    var discontinueDate by remember { mutableStateOf(LocalDate.now().toString()) }
     var requireQrScan by remember { mutableStateOf(true) }
     var isGrouped by remember { mutableStateOf(false) }
     var prepackagedGroupId by remember { mutableStateOf<String?>(null) }
@@ -124,6 +130,7 @@ fun AddEditMedicationScreen(
             val definitionsById = repository.getAdministrationTimes().associateBy { it.id }
             repository.getMedication(medicationId)?.let { med ->
                 existing = med
+                isPrn = med.isPrn
                 ndc = med.ndc
                 detailsForNdc = med.ndc
                 name = med.name
@@ -485,22 +492,18 @@ fun AddEditMedicationScreen(
             }
             scheduleError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
-            OutlinedTextField(
-                value = startText,
-                onValueChange = { startText = it; startError = null; endError = null },
-                label = { Text("Start date (YYYY-MM-DD)") },
-                isError = startError != null,
-                supportingText = { startError?.let { Text(it) } },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = endText,
-                onValueChange = { endText = it; endError = null },
-                label = { Text("End date (optional, YYYY-MM-DD)") },
-                isError = endError != null,
-                supportingText = { endError?.let { Text(it) } },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Text("PRN / as-needed medication (required)", style = MaterialTheme.typography.titleSmall)
+            Row {
+                FilterChip(selected = isPrn == true, onClick = { isPrn = true }, label = { Text("Yes — PRN") })
+                Spacer(Modifier.width(12.dp))
+                FilterChip(selected = isPrn == false, onClick = { isPrn = false }, label = { Text("No — scheduled") })
+            }
+            com.campmeds.app.ui.common.DatePresetField("Start date (YYYY-MM-DD)", startText, campSettings.startDates) { startText = it; startError = null }
+            startError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            com.campmeds.app.ui.common.DatePresetField("End date (optional, YYYY-MM-DD)", endText, campSettings.endDates) { endText = it; endError = null }
+            endError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            existing?.let { Text("Created by: ${it.createdByName ?: "Unknown (legacy record)"}") }
+            saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             OutlinedTextField(
                 value = expirationText,
                 onValueChange = { expirationText = it; expirationError = null },
@@ -638,8 +641,7 @@ fun AddEditMedicationScreen(
                     "The QR code is created when you save. Then print, save or share it from here or from the patient's details."
                 )
                 identityChanging -> Text(
-                    "You changed the medication's name, NDC, strength or form. Saving creates a NEW medication record with a " +
-                        "new QR code; the old record, its history and its QR code are kept (the old one is retired).",
+                    "Saving keeps the same medication sheet and QR code. A dated history entry preserves the old and new values.",
                     color = MaterialTheme.colorScheme.error
                 )
                 else -> {
@@ -701,7 +703,8 @@ fun AddEditMedicationScreen(
                         InputValidation.validateDateRange(start, end)?.let { endError = it; ok = false }
                     }
 
-                    if (!ok || start == null) return@Button
+                    if (isPrn == null) { saveError = "Choose Yes or No for PRN."; ok = false }
+                    if (saving || !ok || start == null) return@Button
 
                     val medication = (existing ?: Medication(
                         patientId = patientId,
@@ -723,6 +726,7 @@ fun AddEditMedicationScreen(
                         scheduleTimes = times,
                         administrationTimeIds = administrationTimeIds,
                         requireQrScan = requireQrScan,
+                        isPrn = isPrn == true,
                         isGroupAdministered = isGrouped,
                         prepackagedGroupId = if (isGrouped) prepackagedGroupId else null,
                         prepackagedGroupName = if (isGrouped) groupName.trim().ifBlank { null } else null,
@@ -744,11 +748,11 @@ fun AddEditMedicationScreen(
                         return@Button
                     }
 
+                    saving = true
                     scope.launch {
-                        // Edits that change name/NDC/strength/form archive the old record and create a new one;
-                        // any other edit updates in place. Either way no history is lost.
-                        repository.saveMedicationEdit(existing, medication)
-                        onDone()
+                        try { repository.saveMedicationEdit(existing, medication); onDone() }
+                        catch (e: IllegalArgumentException) { saveError = e.message }
+                        finally { saving = false }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -757,6 +761,9 @@ fun AddEditMedicationScreen(
             }
 
             if (existing != null) {
+                if (existing?.discontinuedOn == null) OutlinedButton(onClick = { showDiscontinue = true }) {
+                    Text("End medication early")
+                } else Text("Discontinued effective ${existing?.discontinuedOn}")
                 OutlinedButton(
                     onClick = { showDeleteConfirm = true },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -764,6 +771,27 @@ fun AddEditMedicationScreen(
                 ) { Text("Delete medication") }
             }
         }
+    }
+
+    if (showDiscontinue) {
+        AlertDialog(onDismissRequest = { showDiscontinue = false }, title = { Text("Discontinue medication?") },
+            text = { Column {
+                Text("Warning: no doses will be offered on or after the effective date. The original end date and all administration records will be retained.")
+                com.campmeds.app.ui.common.DatePresetField("Effective date (YYYY-MM-DD)", discontinueDate, campSettings.endDates) { discontinueDate = it }
+                saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            } },
+            confirmButton = { TextButton(enabled = !saving, onClick = {
+                val date = runCatching { LocalDate.parse(discontinueDate) }.getOrNull()
+                if (date == null) saveError = "Enter a valid date." else {
+                    saving = true
+                    scope.launch {
+                        try { repository.discontinueMedication(existing!!.id, date); showDiscontinue = false; onDone() }
+                        catch (e: IllegalArgumentException) { saveError = "Choose today or later, within the medication's date range." }
+                        finally { saving = false }
+                    }
+                }
+            }) { Text("Confirm discontinuation") } },
+            dismissButton = { TextButton(onClick = { showDiscontinue = false }) { Text("Cancel") } })
     }
 
     if (showDeleteConfirm) {

@@ -89,7 +89,8 @@ object SpreadsheetPlanner {
         val start: Input<LocalDate>,
         val end: Input<LocalDate>,
         val expiration: Input<LocalDate>,
-        val purpose: Input<String>
+        val purpose: Input<String>,
+        val prn: Input<Boolean>
     )
 
     private data class ParsedRow(
@@ -175,10 +176,17 @@ object SpreadsheetPlanner {
             }
         }
 
+        fun prn(raw: RawRow, rc: RowIssues): Input<Boolean> = when (raw.value(columns[Field.PRN]).lowercase(Locale.ROOT)) {
+            "" -> Input.Keep
+            "yes", "true", "1" -> Input.Value(true)
+            "no", "false", "0" -> Input.Value(false)
+            else -> { rc.fail("PRN", "PRN must be Yes or No."); Input.Keep }
+        }
+
         fun medicationInput(raw: RawRow, rc: RowIssues): MedicationInput? {
             val medicationFields = listOf(
                 Field.MEDICATION, Field.NDC, Field.STRENGTH, Field.FORM, Field.DOSAGE_INSTRUCTIONS,
-                Field.SCHEDULE_TIMES, Field.START_DATE, Field.END_DATE, Field.BOTTLE_EXPIRATION, Field.PURPOSE
+                Field.SCHEDULE_TIMES, Field.START_DATE, Field.END_DATE, Field.BOTTLE_EXPIRATION, Field.PURPOSE, Field.PRN
             )
             if (medicationFields.all { raw.value(columns[it]).isEmpty() }) return null
             return MedicationInput(
@@ -191,7 +199,8 @@ object SpreadsheetPlanner {
                 start = date(raw, Field.START_DATE, rc),
                 end = date(raw, Field.END_DATE, rc),
                 expiration = date(raw, Field.BOTTLE_EXPIRATION, rc),
-                purpose = text(raw, Field.PURPOSE, rc)
+                purpose = text(raw, Field.PURPOSE, rc),
+                prn = prn(raw, rc)
             )
         }
 
@@ -245,6 +254,7 @@ object SpreadsheetPlanner {
         }
 
         fun requireNewMedicationFields(m: MedicationInput, rc: RowIssues) {
+            if (m.prn !is Input.Value<*>) rc.fail("PRN", "PRN (Yes or No) is required for each new medication.")
             if (m.name !is Input.Value<*>) rc.fail("Medication", "Medication name is required when other medication columns are filled in.")
             if (m.dosage !is Input.Value<*>) rc.fail("Dosage Instructions", "Dosage instructions are required for a new medication.")
             if (m.schedule !is Input.Value<*>) rc.fail("Schedule Times", "At least one schedule time is required, for example 08:00 or 08:00, 20:00.")
@@ -342,7 +352,8 @@ object SpreadsheetPlanner {
             start = merged { it.medication?.start ?: Input.Keep },
             end = merged { it.medication?.end ?: Input.Keep },
             expiration = merged { it.medication?.expiration ?: Input.Keep },
-            purpose = merged { it.medication?.purpose ?: Input.Keep }
+            purpose = merged { it.medication?.purpose ?: Input.Keep },
+            prn = merged { it.medication?.prn ?: Input.Keep }
         )
 
         /** True (and an issue is recorded) when rows for the same record give different non-blank values. */
@@ -417,6 +428,7 @@ object SpreadsheetPlanner {
                 isGroupAdministered = false,
                 prepackagedGroupId = null,
                 purpose = m.purpose.valueOrNull(),
+                isPrn = m.prn.valueOrNull() ?: false,
                 isArchived = false
             )
         }
@@ -639,7 +651,8 @@ object SpreadsheetPlanner {
                     conflicts(rows, "Start Date") { it.medication?.start ?: Input.Keep },
                     conflicts(rows, "End Date") { it.medication?.end ?: Input.Keep },
                     conflicts(rows, "Bottle Expiration") { it.medication?.expiration ?: Input.Keep },
-                    conflicts(rows, "Purpose") { it.medication?.purpose ?: Input.Keep }
+                    conflicts(rows, "Purpose") { it.medication?.purpose ?: Input.Keep },
+                    conflicts(rows, "PRN") { it.medication?.prn ?: Input.Keep }
                 ).any { it }
                 if (conflicted) {
                     skipped += rows.map { it.rowNumber }
@@ -661,6 +674,7 @@ object SpreadsheetPlanner {
                 val start = diffField("Start Date", med.startDate, m.start, { dateText(it) }, true, changes) ?: med.startDate
                 val end = diffField("End Date", med.endDate, m.end, { dateText(it) }, true, changes)
                 val expiration = diffField("Bottle Expiration", med.bottleExpiration, m.expiration, { dateText(it) }, false, changes)
+                val prn = diffField("PRN", med.isPrn, m.prn, { it?.toString().orEmpty() }, true, changes) ?: med.isPrn
                 val purpose = diffField("Purpose", med.purpose, m.purpose, { it ?: "" }, false, changes)?.ifBlank { null }
 
                 if (patientId != med.patientId) {
@@ -695,7 +709,8 @@ object SpreadsheetPlanner {
                     startDate = start,
                     endDate = end,
                     bottleExpiration = expiration,
-                    purpose = purpose
+                    purpose = purpose,
+                    isPrn = prn
                 )
                 medicationUpdates += MedicationUpdate(
                     medicationId = medicationId,

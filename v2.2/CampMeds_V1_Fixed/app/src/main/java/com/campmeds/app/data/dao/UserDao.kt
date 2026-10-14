@@ -15,7 +15,7 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE id = :id")
     suspend fun getById(id: String): User?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsert(user: User)
 
     @Delete

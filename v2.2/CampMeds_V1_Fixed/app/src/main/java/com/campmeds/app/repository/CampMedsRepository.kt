@@ -14,6 +14,16 @@ import com.campmeds.app.export.XlsxExporter
 import com.campmeds.app.network.NdcApiClient
 import com.campmeds.app.network.NdcLookupResult
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import com.campmeds.app.auth.Session
+import com.campmeds.app.auth.RecoverySecurity
+import com.campmeds.app.domain.isActiveOn
+import com.campmeds.app.domain.localDays
+import com.campmeds.app.domain.MedicationChanges
+import com.campmeds.app.export.SheetNames
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -38,27 +48,101 @@ class CampMedsRepository(
         return users.firstOrNull { PinHasher.verify(pin, it.pinSalt, it.pinHash) }
     }
 
-    suspend fun createUser(name: String, role: Role, pin: String): User {
+    suspend fun createUser(name: String, role: Role, pin: String,
+        recovery: Map<String, String> = emptyMap()): User {
+        require(name.isNotBlank())
+        if (recovery.isNotEmpty()) RecoverySecurity.validate(recovery)
         val salt = PinHasher.newSalt()
         val user = User(name = name, role = role, pinHash = PinHasher.hash(pin, salt), pinSalt = salt)
-        db.userDao().upsert(user)
-        return user
+        val secured = if (recovery.isEmpty()) user else withContext(Dispatchers.Default) {
+            val salts = recovery.keys.map { PinHasher.newSalt() }
+            user.copy(recoveryQuestionIds = recovery.keys.toList(), recoverySalts = salts,
+                recoveryHashes = recovery.values.mapIndexed { i, answer -> RecoverySecurity.hash(answer, salts[i]) })
+        }
+        db.userDao().upsert(secured)
+        return secured
     }
 
     fun observeUsers(): Flow<List<User>> = db.userDao().observeAll()
 
+    /** Enrollment for existing accounts requires their current PIN; no recovery state is ever fabricated. */
+    suspend fun enrollRecovery(currentPin: String, answers: Map<String, String>): Boolean {
+        val id = Session.currentUser.value?.id ?: return false
+        RecoverySecurity.validate(answers)
+        return withContext(Dispatchers.Default) { db.withTransaction {
+            val user = db.userDao().getById(id) ?: return@withTransaction false
+            if (!PinHasher.verify(currentPin, user.pinSalt, user.pinHash)) return@withTransaction false
+            val salts = answers.keys.map { PinHasher.newSalt() }
+            db.userDao().upsert(user.copy(recoveryQuestionIds = answers.keys.toList(), recoverySalts = salts,
+                recoveryHashes = answers.values.mapIndexed { i, a -> RecoverySecurity.hash(a, salts[i]) },
+                recoveryFailures = 0, recoveryLockedUntil = 0))
+            true
+        } }
+    }
+
+    /** Local recovery uses the existing PIN hasher for the replacement PIN, never changes roles or history.
+     * Failure counters and the reset are atomic, persistent and cannot be bypassed by reopening the form.
+     */
+    suspend fun recoverAccount(userId: String, answers: Map<String, String>, newPin: String): Boolean =
+        withContext(Dispatchers.Default) { db.withTransaction {
+            val user = db.userDao().getById(userId) ?: return@withTransaction false
+            val now = System.currentTimeMillis()
+            if (user.recoveryLockedUntil > now || user.recoveryQuestionIds.size != 3 ||
+                user.recoveryHashes.size != 3 || user.recoverySalts.size != 3) return@withTransaction false
+            if (!newPin.matches(Regex("[0-9]{4,8}"))) return@withTransaction false
+            // Evaluate all answers, not just up to the first wrong one.
+            val matches = user.recoveryQuestionIds.mapIndexed { i, q ->
+                RecoverySecurity.verify(answers[q].orEmpty(), user.recoverySalts[i], user.recoveryHashes[i])
+            }.all { it }
+            if (!matches) {
+                val failures = (user.recoveryFailures + 1).coerceAtMost(100)
+                db.userDao().upsert(user.copy(recoveryFailures = failures,
+                    recoveryLockedUntil = if (failures >= 5) now + 30 * 60 * 1000L else 0))
+                return@withTransaction false
+            }
+            // PIN-only login must remain unambiguous; never allow recovery to select another user's PIN.
+            if (db.userDao().getAll().any { it.id != user.id && PinHasher.verify(newPin, it.pinSalt, it.pinHash) })
+                return@withTransaction false
+            val salt = PinHasher.newSalt()
+            db.userDao().upsert(user.copy(pinSalt = salt, pinHash = PinHasher.hash(newPin, salt),
+                recoveryFailures = 0, recoveryLockedUntil = 0))
+            true
+        } }
+
+    fun observeSettings(): Flow<CampSettings> = db.campSettingsDao().observe().map { it ?: CampSettings() }
+    suspend fun saveSettings(settings: CampSettings) {
+        check(Session.hasAtLeast(Role.ADMIN)) { "Administrator access required" }
+        require(listOf(settings.bunkLabel, settings.counselorLabel, settings.divisionLabel).all { it.isNotBlank() })
+        (settings.startDates + settings.endDates).forEach { LocalDate.parse(it) }
+        db.campSettingsDao().save(settings.copy(id = 1, startDates = settings.startDates.distinct().sorted(),
+            endDates = settings.endDates.distinct().sorted()))
+    }
+
     // ---------------- Patients ----------------
 
-    fun observePatients(): Flow<List<Patient>> = db.patientDao().observeAll()
+    fun observePatients(): Flow<List<Patient>> = combine(db.patientDao().observeIncludingArchived(), localDays()) {
+        patients, day -> patients.filter { it.isActiveOn(day) }
+    }
 
-    fun searchPatients(query: String): Flow<List<Patient>> = db.patientDao().search(query)
+    fun observeArchive(): Flow<List<Patient>> = combine(db.patientDao().observeIncludingArchived(), localDays()) {
+        patients, day -> patients.filterNot { it.isActiveOn(day) }
+    }
+
+    fun searchPatients(query: String): Flow<List<Patient>> = observePatients().map { patients ->
+        patients.filter { it.name.contains(query, ignoreCase = true) }
+    }
 
     suspend fun getPatient(id: String): Patient? = db.patientDao().getById(id)
 
     fun observePatient(id: String): Flow<Patient?> = db.patientDao().observeById(id)
 
     /** Creates or updates a patient. `name` is always re-derived from first/last name. */
-    suspend fun savePatient(patient: Patient) = db.patientDao().upsert(normalizePatient(patient))
+    suspend fun savePatient(patient: Patient) {
+        require(patient.startDate == null || patient.endDate == null || patient.startDate <= patient.endDate) {
+            "End date cannot precede start date"
+        }
+        db.patientDao().upsert(normalizePatient(patient))
+    }
 
     /**
      * "Deletes" a patient: the patient and their medications are archived, never removed, so every
@@ -80,54 +164,61 @@ class CampMedsRepository(
 
     suspend fun getMedicationByQr(qrCode: String): Medication? = db.medicationDao().getByQrCode(qrCode)
 
-    suspend fun saveMedication(medication: Medication) = db.medicationDao().upsert(medication)
+    suspend fun saveMedication(medication: Medication) {
+        saveMedicationEdit(db.medicationDao().getById(medication.id), medication)
+    }
+
+    fun observeMedicationChanges(id: String) = db.importHistoryDao().observeChanges(id)
+
+    suspend fun discontinueMedication(id: String, effectiveDate: LocalDate) {
+        check(Session.hasAtLeast(Role.ADMIN)) { "Administrator access required" }
+        db.withTransaction {
+            val med = requireNotNull(db.medicationDao().getById(id))
+            require(med.discontinuedOn == null) { "Already discontinued" }
+            require(effectiveDate >= LocalDate.now() && effectiveDate >= med.startDate)
+            require(med.endDate == null || effectiveDate <= med.endDate)
+            saveMedicationEdit(med, med.copy(discontinuedOn = effectiveDate))
+        }
+    }
 
     fun observeArchivedMedicationsForPatient(patientId: String): Flow<List<Medication>> =
         db.medicationDao().observeArchivedForPatient(patientId)
 
-    /**
-     * Saves an add/edit from the medication form.
-     *  - new medication                      -> inserted
-     *  - edit that changes the medication's identity (name / NDC / strength / form)
-     *                                        -> old record archived (history + sheet kept), NEW record
-     *                                           with a new id and QR code inserted, in one transaction
-     *  - any other edit                      -> updated in place
-     * Returns the record that is now the current one.
-     */
-    suspend fun saveMedicationEdit(existing: Medication?, updated: Medication): Medication {
-        // Safety net for the prepackaged-group rules: the form validates first and shows the message, so
-        // reaching this means a caller bypassed the check. Refusing is the only safe outcome — a group may
-        // never span patients.
+    /** Edits keep the same ID, QR and sheet. Old/new values are appended atomically to history. */
+    suspend fun saveMedicationEdit(existing: Medication?, updated: Medication): Medication = db.withTransaction {
+        val old = db.medicationDao().getById(existing?.id ?: updated.id)
+        if (old != null) require(existing == old) { "Medication changed. Reopen the form before saving." }
         val validationError = PrepackagedGroups.validate(updated, db.medicationDao().getCurrentMedications())
         require(validationError == null) { validationError ?: "" }
-
-        if (existing == null) {
-            db.medicationDao().upsert(updated)
-            return updated
-        }
-        if (MedicationIdentity.changed(existing, updated)) {
-            val replacement = updated.copy(
-                id = UUID.randomUUID().toString(),
-                qrCode = UUID.randomUUID().toString(),
-                isArchived = false
-            )
-            db.withTransaction {
-                db.medicationDao().archive(existing.id)
-                db.medicationDao().upsert(replacement)
-                syncGroupName(replacement)
-            }
-            return replacement
-        }
-        db.medicationDao().upsert(updated)
-        syncGroupName(updated)
-        return updated
+        require(updated.endDate == null || updated.endDate >= updated.startDate)
+        val actor = Session.currentUser.value
+        val used = db.medicationDao().getAllIncludingArchived().mapNotNull { it.sheetName?.lowercase() }.toMutableSet()
+        val saved = updated.copy(
+            id = old?.id ?: updated.id, patientId = old?.patientId ?: updated.patientId,
+            qrCode = old?.qrCode ?: updated.qrCode,
+            sheetName = old?.sheetName ?: SheetNames.unique(SheetNames.baseName(
+                db.patientDao().getById(updated.patientId)?.name.orEmpty(), old?.name ?: updated.name), used),
+            createdByUserId = if (old != null) old.createdByUserId else actor?.id,
+            createdByName = if (old != null) old.createdByName else actor?.name,
+            createdAt = if (old != null) old.createdAt else LocalDateTime.now()
+        )
+        if (old != null) db.importHistoryDao().insertChanges(MedicationChanges.between(old, saved, actor?.id))
+        db.medicationDao().upsert(saved)
+        syncGroupName(saved)
+        saved
     }
 
-    /** Keeps one name per group: the name saved on any member is written to all current members. */
+    /** Keep group labels consistent, recording every affected medication's previous value. */
     private suspend fun syncGroupName(medication: Medication) {
         val groupId = medication.prepackagedGroupId ?: return
         if (!medication.isGroupAdministered) return
-        db.medicationDao().setGroupName(groupId, medication.patientId, medication.prepackagedGroupName)
+        db.medicationDao().getByPrepackagedGroup(groupId).filter {
+            it.id != medication.id && it.patientId == medication.patientId
+        }.forEach { old ->
+            val updated = old.copy(prepackagedGroupName = medication.prepackagedGroupName)
+            db.importHistoryDao().insertChanges(MedicationChanges.between(old, updated, Session.currentUser.value?.id))
+            db.medicationDao().upsert(updated)
+        }
     }
 
     /** "Deletes" a medication by archiving it. Its dose history is untouched. */
@@ -202,7 +293,9 @@ class CampMedsRepository(
             db.administrationTimeDao().upsert(entry)
             if (existing != null && existing.time != time) {
                 AdministrationTimeRules.using(db.medicationDao().getCurrentMedications(), entry.id).forEach {
-                    db.medicationDao().upsert(AdministrationTimeRules.retime(it, entry.id, time))
+                    val updated = AdministrationTimeRules.retime(it, entry.id, time)
+                    db.importHistoryDao().insertChanges(MedicationChanges.between(it, updated, Session.currentUser.value?.id))
+                    db.medicationDao().upsert(updated)
                 }
             }
         }
@@ -217,7 +310,9 @@ class CampMedsRepository(
     suspend fun deleteAdministrationTime(id: String) {
         db.withTransaction {
             AdministrationTimeRules.using(db.medicationDao().getCurrentMedications(), id).forEach {
-                db.medicationDao().upsert(AdministrationTimeRules.detach(it, id))
+                val updated = AdministrationTimeRules.detach(it, id)
+                    db.importHistoryDao().insertChanges(MedicationChanges.between(it, updated, Session.currentUser.value?.id))
+                    db.medicationDao().upsert(updated)
             }
             db.administrationTimeDao().getById(id)?.let { db.administrationTimeDao().delete(it) }
         }
@@ -244,32 +339,26 @@ class CampMedsRepository(
     suspend fun getHistoryForPatientOnce(patientId: String): List<DoseLog> =
         db.doseLogDao().getHistoryForPatientOnce(patientId)
 
-    /**
-     * Records (or overwrites) a dose outcome for a specific scheduled time.
-     * Per spec section 8, edits simply overwrite — no correction/edit trail in this version.
-     */
+    /** First-write wins, inside the transaction: double taps/scans never overwrite an outcome. */
     suspend fun recordDose(
         medicationId: String,
         scheduledFor: LocalDateTime,
         status: DoseStatus,
         loggedByUserId: String,
-        wasOverride: Boolean = false
-    ) {
-        val existing = db.doseLogDao().findExisting(medicationId, scheduledFor.toString())
-        val entry = (existing ?: DoseLog(
-            medicationId = medicationId,
-            scheduledFor = scheduledFor,
-            status = status,
-            loggedAt = LocalDateTime.now(),
-            loggedByUserId = loggedByUserId,
-            wasOverride = wasOverride
-        )).copy(
-            status = status,
-            loggedAt = LocalDateTime.now(),
-            loggedByUserId = loggedByUserId,
-            wasOverride = wasOverride
-        )
-        db.doseLogDao().upsert(entry)
+        wasOverride: Boolean = false,
+        heldReason: String? = null,
+        expectedMedication: Medication? = null
+    ): Boolean = db.withTransaction {
+        if (db.doseLogDao().findExisting(medicationId, scheduledFor.toString()) != null) return@withTransaction false
+        val med = db.medicationDao().getById(medicationId) ?: return@withTransaction false
+        val patient = db.patientDao().getById(med.patientId) ?: return@withTransaction false
+        if (expectedMedication != null && (med != expectedMedication || scheduledFor.toLocalDate() != LocalDate.now())) return@withTransaction false
+        if (!med.isActiveOn(scheduledFor.toLocalDate()) || !patient.isActiveOn(scheduledFor.toLocalDate()) ||
+            !med.isActiveOn(LocalDate.now()) || !patient.isActiveOn(LocalDate.now())) return@withTransaction false
+        db.doseLogDao().upsert(DoseLog(medicationId = medicationId, scheduledFor = scheduledFor,
+            status = status, loggedAt = LocalDateTime.now(), loggedByUserId = loggedByUserId,
+            wasOverride = wasOverride, heldReason = if (status == DoseStatus.HELD) heldReason?.trim()?.ifBlank { null } else null))
+        true
     }
 
     /**
@@ -292,6 +381,9 @@ class CampMedsRepository(
             for (dose in planned) {
                 val existing = db.doseLogDao().findExisting(dose.medicationId, dose.scheduledFor.toString())
                 if (existing != null) continue
+                val med = db.medicationDao().getById(dose.medicationId) ?: continue
+                val patient = db.patientDao().getById(med.patientId) ?: continue
+                if (!med.isActiveOn(now.toLocalDate()) || !patient.isActiveOn(now.toLocalDate())) continue
                 db.doseLogDao().upsert(
                     DoseLog(
                         medicationId = dose.medicationId,
@@ -314,7 +406,7 @@ class CampMedsRepository(
      * Everything the export needs: one entry per medication (archived ones and those of archived
      * patients included), each with that medication's complete history and its patient's name.
      */
-    suspend fun loadExportData(): XlsxExporter.ExportData {
+    suspend fun loadExportData(): XlsxExporter.ExportData = db.withTransaction {
         val patientsById = db.patientDao().getAllIncludingArchived().associateBy { it.id }
         val medications = db.medicationDao().getAllIncludingArchived()
         val logs = db.doseLogDao().getAll()
@@ -324,13 +416,14 @@ class CampMedsRepository(
             XlsxExporter.MedicationSheet(
                 patientName = patientsById[med.patientId]?.name.orEmpty(),
                 medication = med,
-                doseLogs = logsByMedication[med.id].orEmpty()
+                doseLogs = logsByMedication[med.id].orEmpty(),
+                changes = db.importHistoryDao().changesForRecord(med.id)
             )
         }.sortedWith(
             compareBy({ it.patientName.lowercase() }, { it.medication.name.lowercase() }, { it.medication.startDate })
         )
         val knownMedicationIds = medications.map { it.id }.toSet()
-        return XlsxExporter.ExportData(
+        XlsxExporter.ExportData(
             sheets = sheets,
             usersById = db.userDao().getAll().associateBy { it.id },
             unlinkedLogs = logs.filter { it.medicationId !in knownMedicationIds }

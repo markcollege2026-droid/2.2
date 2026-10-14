@@ -65,6 +65,7 @@ fun DoseHistoryScreen(
                             Column {
                                 Text("Scheduled: ${log.scheduledFor.format(fmt)}")
                                 Text("Logged: ${log.loggedAt.format(fmt)}")
+                                log.heldReason?.let { Text("Held reason: $it") }
                                 if (log.wasOverride) Text("⚠ Recorded via override")
                             }
                         },

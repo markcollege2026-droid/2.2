@@ -2,7 +2,7 @@ name: Android Build Workflow
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "arena/dd0a2f0b-2-2"]
   pull_request:
     branches: ["main", "master"]
   workflow_dispatch:
@@ -30,13 +30,26 @@ jobs:
           distribution: "zulu"
           java-version: "17"
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Generate Gradle Wrapper
         run: |
           gradle wrapper --gradle-version 8.7
           chmod +x gradlew
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Build Debug APK
+        run: |
+          set -eo pipefail
+          ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
 
       # Every Gradle run appends to gradle-output.log so the failure step below can publish it: the log and
       # artifact download endpoints are not reachable from every environment, but the API is.
@@ -69,11 +82,6 @@ jobs:
           # for the device to finish booting and retries once if the runner cannot reach the emulator at all.
           script: bash ci/run-instrumented-tests.sh
 
-      - name: Build Debug APK
-        run: |
-          set -eo pipefail
-          ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
-
       # The failure text is published as a job summary and as an annotation: both can be read back through the
       # Actions API, unlike the console log, which some environments cannot download.
       - name: Publish Gradle output on failure
@@ -86,7 +94,7 @@ jobs:
           import xml.etree.ElementTree as ET
 
           chunks = []
-          for path in sorted(glob.glob("app/build/reports/tests/**/*.xml", recursive=True)):
+          for path in sorted(glob.glob("app/build/test-results/**/*.xml", recursive=True)):
               try:
                   root = ET.parse(path).getroot()
               except Exception:
@@ -184,8 +192,17 @@ jobs:
             v2.2/CampMeds_V1_Fixed/app/build/outputs/androidTest-results
           if-no-files-found: ignore
 
+      - name: Upload schemas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: campmeds-room-schemas
+          path: v2.2/CampMeds_V1_Fixed/app/schemas
+
       - name: Upload Build Artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: campmeds-debug-apk
           path: v2.2/CampMeds_V1_Fixed/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn

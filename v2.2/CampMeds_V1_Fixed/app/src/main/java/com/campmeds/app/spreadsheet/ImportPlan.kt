@@ -62,7 +62,7 @@ data class PatientUpdate(val patientId: String, val displayName: String, val row
 data class MedicationCreate(val rowNumber: Int, val newPatientKey: String?, val draft: Medication, val patientLabel: String)
 
 /**
- * [identityChanged] (name, NDC, strength or form) follows the app's existing rule: the old record is archived
+ * [identityChanged] flags name, NDC, strength or form changes for review. The same record is retained.
  * with its history and a new record with a new id and QR code replaces it. The change is listed and confirmed.
  */
 data class MedicationUpdate(

@@ -10,5 +10,10 @@ data class User(
     val name: String,
     val role: Role,
     val pinHash: String,   // salted hash — see auth/PinHasher.kt; never store raw PIN
-    val pinSalt: String
+    val pinSalt: String,
+    @androidx.room.ColumnInfo(defaultValue = "''") val recoveryQuestionIds: List<String> = emptyList(),
+    @androidx.room.ColumnInfo(defaultValue = "''") val recoveryHashes: List<String> = emptyList(),
+    @androidx.room.ColumnInfo(defaultValue = "''") val recoverySalts: List<String> = emptyList(),
+    @androidx.room.ColumnInfo(defaultValue = "0") val recoveryFailures: Int = 0,
+    @androidx.room.ColumnInfo(defaultValue = "0") val recoveryLockedUntil: Long = 0
 )

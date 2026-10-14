@@ -172,3 +172,36 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_change_history_importId` ON `change_history` (`importId`)")
     }
 }
+
+/** Additive migration: no history rows or original schedule/end dates are changed. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        listOf("startDate", "endDate", "bunk", "counselor", "division").forEach {
+            db.execSQL("ALTER TABLE patients ADD COLUMN $it TEXT")
+        }
+        db.execSQL("ALTER TABLE medications ADD COLUMN isPrn INTEGER NOT NULL DEFAULT 0")
+        listOf("createdByUserId", "createdByName", "createdAt", "sheetName", "discontinuedOn").forEach {
+            db.execSQL("ALTER TABLE medications ADD COLUMN $it TEXT")
+        }
+        db.execSQL("ALTER TABLE dose_logs ADD COLUMN heldReason TEXT")
+        listOf("recoveryQuestionIds", "recoveryHashes", "recoverySalts").forEach {
+            db.execSQL("ALTER TABLE users ADD COLUMN $it TEXT NOT NULL DEFAULT ''")
+        }
+        db.execSQL("ALTER TABLE users ADD COLUMN recoveryFailures INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE users ADD COLUMN recoveryLockedUntil INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE IF NOT EXISTS camp_settings (id INTEGER NOT NULL PRIMARY KEY, startDates TEXT NOT NULL, endDates TEXT NOT NULL, bunkLabel TEXT NOT NULL, counselorLabel TEXT NOT NULL, divisionLabel TEXT NOT NULL)")
+
+        // Match the previous export ordering, including collision suffixes, and freeze those sheet names.
+        data class LegacySheet(val id: String, val patient: String, val med: String, val start: String)
+        val rows = mutableListOf<LegacySheet>()
+        db.query("SELECT m.id, p.name, m.name, m.startDate FROM medications m LEFT JOIN patients p ON p.id=m.patientId ORDER BY m.name ASC").use { c ->
+            while (c.moveToNext()) rows += LegacySheet(c.getString(0), c.getString(1).orEmpty(), c.getString(2), c.getString(3))
+        }
+        val used = hashSetOf<String>()
+        rows.sortedWith(compareBy({ it.patient.lowercase() }, { it.med.lowercase() }, { it.start })).forEach {
+            val name = com.campmeds.app.export.SheetNames.unique(com.campmeds.app.export.SheetNames.baseName(it.patient, it.med), used)
+            db.execSQL("UPDATE medications SET sheetName=? WHERE id=?", arrayOf(name, it.id))
+        }
+        // Creator and recovery answers cannot be reconstructed. Leave them unknown rather than inventing them.
+    }
+}

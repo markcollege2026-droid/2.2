@@ -1,0 +1,9 @@
+# Android/Gradle generated outputs and local machine configuration
+**/.gradle/
+**/build/
+**/local.properties
+**/.idea/
+**/*.iml
+**/gradle-output.log
+**/failure-report.md
+**/test-failures.txt

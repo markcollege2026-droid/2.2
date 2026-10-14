@@ -28,6 +28,8 @@ object ImportTemplateExporter {
 
     fun export(context: Context, destination: Uri, patients: List<Patient>, medications: List<Medication>) {
         XSSFWorkbook().use { workbook ->
+            workbook.properties.customProperties.addProperty("CampMeds export date/time", java.time.OffsetDateTime.now().toString())
+            workbook.properties.customProperties.addProperty("Export mode", "Copy — original data retained")
             val headerStyle = headerStyle(workbook)
             val sheet = workbook.createSheet(SHEET_NAME)
             val header = sheet.createRow(0)
@@ -79,7 +81,8 @@ object ImportTemplateExporter {
             Field.START_DATE to med?.startDate?.toString().orEmpty(),
             Field.END_DATE to med?.endDate?.toString().orEmpty(),
             Field.BOTTLE_EXPIRATION to med?.bottleExpiration?.toString().orEmpty(),
-            Field.PURPOSE to med?.purpose.orEmpty()
+            Field.PURPOSE to med?.purpose.orEmpty(),
+            Field.PRN to med?.let { if (it.isPrn) "Yes" else "No" }.orEmpty()
         )
         Field.values().forEachIndexed { index, field ->
             val value = values[field].orEmpty()
@@ -97,7 +100,7 @@ object ImportTemplateExporter {
             "A blank cell means no change. Nothing is deleted because a row is missing from the sheet.",
             "To empty an optional value (Date of Birth, Last Name, Notes, Conditions, End Date, Bottle Expiration, Purpose), type $CLEAR_TOKEN in that cell. Update only.",
             "Dates: YYYY-MM-DD (for example 2026-07-15). Times: HH:MM, separated by commas (for example 08:00, 20:00).",
-            "A new medication needs Medication, Dosage Instructions, Schedule Times and Start Date."
+            "A new medication needs Medication, Dosage Instructions, Schedule Times, Start Date and PRN (Yes or No)."
         )
         lines.forEachIndexed { index, text -> sheet.createRow(index).createCell(0).setCellValue(text) }
         sheet.setColumnWidth(0, 120 * 256)

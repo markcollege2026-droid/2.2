@@ -1,6 +1,9 @@
 package com.campmeds.app.ui.login
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.campmeds.app.auth.RecoverySecurity
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +25,8 @@ fun LoginScreen(
 ) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var showRecovery by remember { mutableStateOf(false) }
+    if (showRecovery) RecoveryDialog(repository) { showRecovery = false }
     var isChecking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -95,6 +100,7 @@ fun LoginScreen(
         ) {
             Text(if (isChecking) "Checking..." else "Log in")
         }
+        TextButton(onClick = { showRecovery = true }) { Text("Forgot PIN? Recover account") }
     }
 }
 
@@ -108,11 +114,12 @@ private fun FirstRunSetupForm(
     var pin by remember { mutableStateOf("") }
     var confirmPin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var recovery by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var isSaving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -139,6 +146,7 @@ private fun FirstRunSetupForm(
         )
         Spacer(Modifier.height(16.dp))
 
+        RecoveryQuestions { recovery = it }
         Button(
             enabled = name.isNotBlank() && pin.isNotBlank() && !isSaving,
             onClick = {
@@ -146,11 +154,14 @@ private fun FirstRunSetupForm(
                     error = "PINs do not match"
                     return@Button
                 }
+                if (!pin.matches(Regex("[0-9]{4,8}"))) { error = "Choose a PIN of 4–8 digits"; return@Button }
+                val invalid = runCatching { RecoverySecurity.validate(recovery) }.exceptionOrNull()
+                if (invalid != null) { error = invalid.message; return@Button }
                 isSaving = true
                 scope.launch {
-                    val user = repository.createUser(name.trim(), Role.ADMIN, pin)
-                    isSaving = false
-                    onCreated(user)
+                    try { onCreated(repository.createUser(name.trim(), Role.ADMIN, pin, recovery)) }
+                    catch (e: IllegalArgumentException) { error = e.message }
+                    finally { isSaving = false }
                 }
             }
         ) {

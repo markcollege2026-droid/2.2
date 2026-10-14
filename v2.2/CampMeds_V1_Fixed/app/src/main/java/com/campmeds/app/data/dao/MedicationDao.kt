@@ -17,6 +17,9 @@ interface MedicationDao {
         """
         SELECT * FROM medications
         WHERE isArchived = 0 AND startDate <= :today AND (endDate IS NULL OR endDate >= :today)
+        AND (discontinuedOn IS NULL OR discontinuedOn > :today)
+        AND patientId IN (SELECT id FROM patients WHERE isArchived = 0
+            AND (startDate IS NULL OR startDate <= :today) AND (endDate IS NULL OR endDate >= :today))
         """
     )
     suspend fun getActiveOn(today: String): List<Medication>
@@ -26,6 +29,9 @@ interface MedicationDao {
         """
         SELECT * FROM medications
         WHERE isArchived = 0 AND startDate <= :today AND (endDate IS NULL OR endDate >= :today)
+        AND (discontinuedOn IS NULL OR discontinuedOn > :today)
+        AND patientId IN (SELECT id FROM patients WHERE isArchived = 0
+            AND (startDate IS NULL OR startDate <= :today) AND (endDate IS NULL OR endDate >= :today))
         """
     )
     fun observeActiveOn(today: String): Flow<List<Medication>>
@@ -54,7 +60,7 @@ interface MedicationDao {
     @Query("SELECT * FROM medications WHERE ndc = :ndc AND ndc != '' AND isException = 0 LIMIT 1")
     suspend fun getCachedByNdc(ndc: String): Medication?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsert(medication: Medication)
 
     /** Gives every current member of one patient's prepackaged group the same group name. */

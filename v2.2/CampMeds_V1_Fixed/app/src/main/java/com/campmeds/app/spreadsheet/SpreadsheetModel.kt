@@ -25,6 +25,7 @@ enum class Field(val header: String, val aliases: Set<String>) {
     START_DATE("Start Date", setOf("startdate", "start")),
     END_DATE("End Date", setOf("enddate", "end")),
     BOTTLE_EXPIRATION("Bottle Expiration", setOf("bottleexpiration", "expiration", "expirationdate", "expires")),
+    PRN("PRN", setOf("prn", "asneeded")),
     PURPOSE("Purpose", setOf("purpose", "reason", "indication"));
 
     /** Patient-detail columns (one value per patient, repeated on every medication row of that patient). */

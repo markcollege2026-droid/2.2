@@ -54,8 +54,7 @@ fun PatientDetailScreen(
     var showPatientQr by remember { mutableStateOf(false) }
     var qrMedication by remember { mutableStateOf<Medication?>(null) }
 
-    // A deleted (archived) patient is no longer reachable from here.
-    LaunchedEffect(patient?.isArchived) { if (patient?.isArchived == true) onBack() }
+    val settings by repository.observeSettings().collectAsState(initial = com.campmeds.app.data.entity.CampSettings())
 
     Scaffold(
         topBar = {
@@ -92,6 +91,11 @@ fun PatientDetailScreen(
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Name", style = MaterialTheme.typography.labelLarge)
                             Text(p.name)
+                            Text("Camper dates: ${p.startDate ?: "Unrestricted"} — ${p.endDate ?: "Unrestricted"}")
+                            Text("${settings.bunkLabel}: ${p.bunk ?: "—"}")
+                            Text("${settings.counselorLabel}: ${p.counselor ?: "—"}")
+                            Text("${settings.divisionLabel}: ${p.division ?: "—"}")
+                            if (p.isArchived) Text("Manually archived — records retained")
                             Text("Notes", style = MaterialTheme.typography.labelLarge)
                             Text(p.notes ?: "—")
                             Text("Conditions", style = MaterialTheme.typography.labelLarge)
@@ -145,6 +149,10 @@ fun PatientDetailScreen(
                                         AdministrationTimeRules.scheduleSummary(med, definitionsById)
                                     }
                                 )
+                                Text("PRN (as needed): ${if (med.isPrn) "Yes" else "No"}")
+                                Text("Created by: ${med.createdByName ?: "Unknown (legacy record)"}")
+                                med.discontinuedOn?.let { Text("Discontinued effective $it") }
+                                MedicationChangeHistory(repository, med.id)
                                 Text("Starts ${med.startDate}" + (med.endDate?.let { " · ends $it" } ?: ""))
                                 med.bottleExpiration?.let { Text("Bottle expires $it") }
                                 Text(if (med.ndc.isBlank()) "NDC: none" else "NDC: ${med.ndc}")
@@ -176,14 +184,15 @@ fun PatientDetailScreen(
     if (showEdit) {
         patient?.let { p ->
             PatientFormDialog(
+                repository = repository,
                 title = "Edit patient",
                 initial = p,
                 onDismiss = { showEdit = false },
-                onSave = { first, last, notes, conditions ->
+                onSave = { updated ->
                     showEdit = false
                     scope.launch {
                         repository.savePatient(
-                            p.copy(firstName = first, lastName = last, notes = notes, conditions = conditions)
+                            updated
                         )
                     }
                 }
@@ -241,5 +250,17 @@ fun PatientDetailScreen(
             },
             confirmButton = { TextButton(onClick = { qrMedication = null }) { Text("Close") } }
         )
+    }
+}
+
+@Composable
+private fun MedicationChangeHistory(repository: CampMedsRepository, id: String) {
+    val changes by remember(id) { repository.observeMedicationChanges(id) }.collectAsState(initial = emptyList())
+    var expanded by remember { mutableStateOf(false) }
+    if (changes.isNotEmpty()) {
+        TextButton(onClick = { expanded = !expanded }) { Text("${changes.size} medication changes ${if (expanded) "▴" else "▾"}") }
+        if (expanded) changes.forEach {
+            Text("${it.changedAt}: ${it.field}: ${it.oldValue ?: "—"} → ${it.newValue ?: "—"}", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }

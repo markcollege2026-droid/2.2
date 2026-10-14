@@ -9,6 +9,9 @@ import com.campmeds.app.data.entity.ImportHistoryEntry
 
 @Dao
 interface ImportHistoryDao {
+    @Query("SELECT * FROM change_history WHERE recordId = :recordId ORDER BY changedAt ASC, id ASC")
+    fun observeChanges(recordId: String): kotlinx.coroutines.flow.Flow<List<ChangeHistoryEntry>>
+
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertImport(entry: ImportHistoryEntry)
