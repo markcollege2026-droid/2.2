@@ -106,7 +106,7 @@ jobs:
                               "{0} > {1}\n    {2}".format(
                                   case.get("classname") or path,
                                   case.get("name"),
-                                  (problem.get("message") or problem.get("type") or "").strip()[:3000],
+                                  (problem.get("message") or problem.text or problem.get("type") or "").strip()[:3000],
                               )
                           )
           if chunks:
@@ -167,7 +167,7 @@ jobs:
                               detail = "{0} > {1} :: {2}".format(
                                   case.get("classname") or path,
                                   case.get("name"),
-                                  (problem.get("message") or problem.get("type") or "").strip()[:2000],
+                                  (problem.get("message") or problem.text or problem.get("type") or "").strip()[:2000],
                               )
                               escaped = detail.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
                               print("::error title={0}::{1}".format(label, escaped))

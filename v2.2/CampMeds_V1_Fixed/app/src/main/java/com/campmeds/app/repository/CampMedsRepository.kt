@@ -233,6 +233,7 @@ class CampMedsRepository(
         if (old != null) require(existing == old) { "Medication changed. Reopen the form before saving." }
         val validationError = PrepackagedGroups.validate(updated, db.medicationDao().getCurrentMedications())
         require(validationError == null) { validationError ?: "" }
+        require(updated.isPrn || updated.scheduleTimes.isNotEmpty()) { "Scheduled medications require an administration time" }
         require(updated.endDate == null || updated.endDate >= updated.startDate)
         val actor = Session.currentUser.value
         val used = db.medicationDao().getAllIncludingArchived().mapNotNull { it.sheetName?.lowercase() }.toMutableSet()

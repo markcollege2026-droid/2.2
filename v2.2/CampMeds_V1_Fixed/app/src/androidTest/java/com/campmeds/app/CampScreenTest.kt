@@ -135,4 +135,27 @@ class CampScreenTest {
         compose.onNodeWithTag("sticky-verify-manually").assertIsDisplayed()
     }
 
+    @Test fun prnFromPatientScreenWithoutTimesStillRequiresPhysicalVerification() {
+        val pair=runBlocking {
+            val p=Patient(name="PRN camper",firstName="PRN camper")
+            repo.savePatient(p)
+            val m=repo.saveMedicationEdit(null,Medication(patientId=p.id,ndc="",name="As-needed medication",strength="1",form="tablet",
+                dosageInstructions="As prescribed",scheduleTimes=emptyList(),startDate=LocalDate.now(),isPrn=true,requireQrScan=true))
+            p to m
+        }
+        compose.setContent { MaterialTheme {
+            com.campmeds.app.ui.patientdetail.PatientDetailScreen(repo,pair.first.id,{}, {}, {}, {})
+        } }
+        visible("Request as-needed dose")
+        compose.onNodeWithText("Request as-needed dose").performScrollTo().performClick()
+        compose.onNodeWithTag("sticky-verify-manually").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Given").performScrollTo().assertIsNotEnabled()
+        assertTrue(runBlocking { db.doseLogDao().getAll().isEmpty() })
+        compose.onAllNodes(isToggleable()).onFirst().performScrollTo().performClick()
+        compose.onNodeWithText("Given").performScrollTo().performClick()
+        compose.waitUntil(10_000) { runBlocking { db.doseLogDao().getAll().size==1 } }
+        val log=runBlocking { db.doseLogDao().getAll().single() }
+        assertTrue(log.isPrn); assertEquals(pair.second.id,log.medicationId); assertEquals(DoseStatus.GIVEN,log.status)
+    }
+
 }

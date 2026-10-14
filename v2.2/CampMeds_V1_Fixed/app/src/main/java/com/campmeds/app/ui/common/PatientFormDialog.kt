@@ -56,7 +56,7 @@ fun PatientFormDialog(
                 DatePresetField("Camper end date (inclusive, YYYY-MM-DD)", end, settings.endDates) { end = it }
                 Text("Before the start and after the end date this camper is in Archive / future campers. Blank dates are unrestricted.")
                 if (settings.bunkEnabled) MultiNameField(settings.bunkLabel, bunks,
-                    bunkOptions.filter { it.division == null || it.division == division }.map { it.name }) { selected ->
+                    bunkOptions.filter { division.isBlank() || it.division == null || it.division == division }.map { it.name }) { selected ->
                     val previousAuto = counselorsForBunks(bunks, bunkOptions)
                     val manual = if (settings.allowCounselorOverride) counselors - previousAuto.toSet() else emptyList()
                     bunks = selected

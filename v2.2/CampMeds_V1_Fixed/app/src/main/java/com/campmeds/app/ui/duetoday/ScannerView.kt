@@ -62,7 +62,11 @@ fun ScannerView(
         var disposed = false
         // Built inside the effect so a teardown that happens while the provider is still starting up cannot
         // touch a camera provider that no longer exists.
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        val cameraProviderFuture = try { ProcessCameraProvider.getInstance(context) }
+        catch (e: Exception) {
+            onError("The camera could not be initialized. Verify manually instead.")
+            return@DisposableEffect onDispose { }
+        }
         val listener = Runnable {
             if (disposed) return@Runnable
             // get() throws if the camera provider failed to start (no camera hardware, camera service down):
@@ -90,8 +94,8 @@ fun ScannerView(
                     it.setAnalyzer(
                         ContextCompat.getMainExecutor(context),
                         BarcodeScannerAnalyzer(
-                            onDetected = onScanned,
-                            onError = { onError("The barcode reader stopped working on this device.") }
+                            onDetected = { code -> if (!disposed) onScanned(code) },
+                            onError = { if (!disposed) onError("The barcode reader stopped working on this device.") }
                         )
                     )
                 }
