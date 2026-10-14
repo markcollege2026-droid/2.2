@@ -15,5 +15,5 @@ data class Division(@PrimaryKey val name: String, val colorHex: String)
 
 @Entity(tableName = "bunk_options")
 data class BunkOption(@PrimaryKey val name: String,
-    @TypeConverters(NameListConverters::class) val counselors: List<String> = emptyList(),
+    @field:TypeConverters(NameListConverters::class) val counselors: List<String> = emptyList(),
     val division: String? = null)

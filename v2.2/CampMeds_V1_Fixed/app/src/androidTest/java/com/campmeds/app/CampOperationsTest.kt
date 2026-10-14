@@ -122,4 +122,21 @@ class CampOperationsTest {
         assertTrue(repo.getHistoryForPatientOnce(c.id).isEmpty())
     }
 
+    @Test fun roomNameFieldsUseJsonRatherThanTheLegacyCommaConverter() = runBlocking {
+        val names=listOf("Smith, Jane", "Counselor \"B\"", "יועץ")
+        repo.saveBunk(BunkOption("Cabin, East",names))
+        assertEquals(names,repo.observeBunks().first().single().counselors)
+        repo.saveSettings(CampSettings(counselorOptions=names))
+        assertEquals(names,repo.observeSettings().first().counselorOptions)
+        val p=camper("List codec")
+        repo.savePatient(p.copy(bunks=listOf("Cabin, East","West"),counselors=names))
+        val saved=repo.getPatient(p.id)!!
+        assertEquals(2,saved.bunks.size)
+        assertEquals("Cabin, East",saved.bunks.first())
+        assertEquals(names,saved.counselors)
+        db.openHelper.readableDatabase.query("SELECT counselors FROM patients WHERE id=?",arrayOf(p.id)).use {
+            assertTrue(it.moveToFirst()); assertEquals(3,org.json.JSONArray(it.getString(0)).length())
+        }
+    }
+
 }

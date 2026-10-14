@@ -29,9 +29,9 @@ data class Patient(
     val counselor: String? = null,
     val division: String? = null,
     @androidx.room.ColumnInfo(defaultValue = "'[]'")
-    @androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
+    @field:androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
     val bunks: List<String> = listOfNotNull(bunk),
     @androidx.room.ColumnInfo(defaultValue = "'[]'")
-    @androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
+    @field:androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
     val counselors: List<String> = listOfNotNull(counselor)
 )

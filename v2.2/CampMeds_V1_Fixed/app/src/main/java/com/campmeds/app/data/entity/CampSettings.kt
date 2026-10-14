@@ -16,6 +16,6 @@ data class CampSettings(
     @androidx.room.ColumnInfo(defaultValue = "1") val counselorEnabled: Boolean = true,
     @androidx.room.ColumnInfo(defaultValue = "1") val allowCounselorOverride: Boolean = true,
     @androidx.room.ColumnInfo(defaultValue = "'[]'")
-    @androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
+    @field:androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
     val counselorOptions: List<String> = emptyList()
 )
