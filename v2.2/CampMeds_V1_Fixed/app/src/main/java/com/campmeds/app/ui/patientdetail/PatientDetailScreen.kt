@@ -48,6 +48,9 @@ fun PatientDetailScreen(
 
     val currentUser by Session.currentUser.collectAsState()
     val isAdmin = Session.hasAtLeast(currentUser, Role.ADMIN) // observed, so it can't go stale
+    val divisions by repository.observeDivisions().collectAsState(initial = emptyList())
+    var prnMedication by remember { mutableStateOf<Medication?>(null) }
+    prnMedication?.let { med -> patient?.let { p -> com.campmeds.app.ui.duetoday.PrnAdministration(repository, p, med) { prnMedication = null } } }
     val today by remember { com.campmeds.app.domain.localDays() }.collectAsState(initial = java.time.LocalDate.now())
 
     var showEdit by remember { mutableStateOf(false) }
@@ -93,9 +96,9 @@ fun PatientDetailScreen(
                             Text("Name", style = MaterialTheme.typography.labelLarge)
                             Text(p.name)
                             Text("Camper dates: ${p.startDate ?: "Unrestricted"} — ${p.endDate ?: "Unrestricted"}")
-                            Text("${settings.bunkLabel}: ${p.bunk ?: "—"}")
-                            Text("${settings.counselorLabel}: ${p.counselor ?: "—"}")
-                            Text("${settings.divisionLabel}: ${p.division ?: "—"}")
+                            Text("${settings.bunkLabel}: ${p.bunks.joinToString().ifBlank { "—" }}")
+                            Text("${settings.counselorLabel}: ${p.counselors.joinToString().ifBlank { "—" }}")
+                            com.campmeds.app.ui.common.DivisionBadge(p.division, divisions)
                             if (p.isArchived) Text("Manually archived — records retained")
                             Text("Notes", style = MaterialTheme.typography.labelLarge)
                             Text(p.notes ?: "—")
@@ -151,6 +154,9 @@ fun PatientDetailScreen(
                                     }
                                 )
                                 Text("PRN (as needed): ${if (med.isPrn) "Yes" else "No"}")
+                                if (med.isPrn && isActive && patient?.isActiveOn(today) == true && currentUser != null) {
+                                    OutlinedButton(onClick = { prnMedication = med }) { Text("Request as-needed dose") }
+                                }
                                 Text("Created by: ${med.createdByName ?: "Unknown (legacy record)"}")
                                 med.discontinuedOn?.let { Text("Discontinued effective $it") }
                                 MedicationChangeHistory(repository, med.id)

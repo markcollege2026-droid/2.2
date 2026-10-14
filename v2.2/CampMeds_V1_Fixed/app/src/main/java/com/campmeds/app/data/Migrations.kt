@@ -205,3 +205,27 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         // Creator and recovery answers cannot be reconstructed. Leave them unknown rather than inventing them.
     }
 }
+
+/** 6 → 7 is additive. Legacy single values are each copied as ONE JSON item, including embedded commas. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE patients ADD COLUMN bunks TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE patients ADD COLUMN counselors TEXT NOT NULL DEFAULT '[]'")
+        val old = mutableListOf<Triple<String, String?, String?>>()
+        db.query("SELECT id,bunk,counselor FROM patients").use { c ->
+            while (c.moveToNext()) old += Triple(c.getString(0), c.getString(1), c.getString(2))
+        }
+        old.forEach { (id,bunk,counselor) ->
+            db.execSQL("UPDATE patients SET bunks=?, counselors=? WHERE id=?", arrayOf(
+                org.json.JSONArray(listOfNotNull(bunk)).toString(), org.json.JSONArray(listOfNotNull(counselor)).toString(), id))
+        }
+        listOf("bunkEnabled", "counselorEnabled", "allowCounselorOverride").forEach {
+            db.execSQL("ALTER TABLE camp_settings ADD COLUMN $it INTEGER NOT NULL DEFAULT 1")
+        }
+        db.execSQL("ALTER TABLE camp_settings ADD COLUMN counselorOptions TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE dose_logs ADD COLUMN isPrn INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE IF NOT EXISTS camp_sessions (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, startDate TEXT NOT NULL, endDate TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS divisions (name TEXT NOT NULL PRIMARY KEY, colorHex TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS bunk_options (name TEXT NOT NULL PRIMARY KEY, counselors TEXT NOT NULL, division TEXT)")
+    }
+}

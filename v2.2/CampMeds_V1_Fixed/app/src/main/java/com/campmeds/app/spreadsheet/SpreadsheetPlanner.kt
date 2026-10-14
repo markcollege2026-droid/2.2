@@ -257,7 +257,7 @@ object SpreadsheetPlanner {
             if (m.prn !is Input.Value<*>) rc.fail("PRN", "PRN (Yes or No) is required for each new medication.")
             if (m.name !is Input.Value<*>) rc.fail("Medication", "Medication name is required when other medication columns are filled in.")
             if (m.dosage !is Input.Value<*>) rc.fail("Dosage Instructions", "Dosage instructions are required for a new medication.")
-            if (m.schedule !is Input.Value<*>) rc.fail("Schedule Times", "At least one schedule time is required, for example 08:00 or 08:00, 20:00.")
+            if (m.prn.valueOrNull() != true && m.schedule !is Input.Value<*>) rc.fail("Schedule Times", "At least one schedule time is required, for example 08:00 or 08:00, 20:00.")
             if (m.start !is Input.Value<*>) rc.fail("Start Date", "Start date is required for a new medication, for example 2026-07-01.")
             val start = m.start.valueOrNull()
             val end = m.end.valueOrNull()
@@ -694,6 +694,11 @@ object SpreadsheetPlanner {
                     continue
                 }
 
+                if (!prn && newTimes.isEmpty()) {
+                    rows.forEach { issues += Issue(IssueKind.INVALID_ROW, it.rowNumber, "Schedule Times", "Scheduled medications require an administration time.") }
+                    skipped += rows.map { it.rowNumber }
+                    continue
+                }
                 if (changes.isEmpty()) continue
 
                 val (times, timeIds) = if (newTimes != oldTimes) scheduleFor(newTimes) else Pair(med.scheduleTimes, med.administrationTimeIds)

@@ -85,6 +85,7 @@ fun AddEditMedicationScreen(
     var customTimeError by remember { mutableStateOf<String?>(null) }
 
     // ---- per-medication settings ----
+    val sessions by repository.observeSessions().collectAsState(initial = emptyList())
     val campSettings by repository.observeSettings().collectAsState(initial = com.campmeds.app.data.entity.CampSettings())
     var isPrn by remember { mutableStateOf<Boolean?>(null) }
     var saveError by remember { mutableStateOf<String?>(null) }
@@ -493,11 +494,13 @@ fun AddEditMedicationScreen(
             scheduleError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
             Text("PRN / as-needed medication (required)", style = MaterialTheme.typography.titleSmall)
+            if (isPrn == true) Text("Administration times are optional for PRN. Initiate each as-needed dose from the patient's screen; PRN is never automatically due or bulk-held.")
             Row {
                 FilterChip(selected = isPrn == true, onClick = { isPrn = true }, label = { Text("Yes — PRN") })
                 Spacer(Modifier.width(12.dp))
                 FilterChip(selected = isPrn == false, onClick = { isPrn = false }, label = { Text("No — scheduled") })
             }
+            com.campmeds.app.ui.common.SessionPresetField(sessions) { startText = it.startDate.toString(); endText = it.endDate.toString() }
             com.campmeds.app.ui.common.DatePresetField("Start date (YYYY-MM-DD)", startText, campSettings.startDates) { startText = it; startError = null }
             startError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             com.campmeds.app.ui.common.DatePresetField("End date (optional, YYYY-MM-DD)", endText, campSettings.endDates) { endText = it; endError = null }
@@ -678,12 +681,12 @@ fun AddEditMedicationScreen(
                     }
 
                     val (times, administrationTimeIds) = AdministrationTimeRules.buildSchedule(namedSelection, customTimes)
-                    if (times.isEmpty()) {
+                    if (times.isEmpty() && isPrn != true) {
                         scheduleError = "Choose at least one administration time, or add a custom time."; ok = false
                     }
                     // An entry can disappear (removed in Settings) while this form is open. Refuse to save
                     // rather than silently dropping the dose that was scheduled from it.
-                    if (selectedNamedIds.any { id -> administrationTimes.none { it.id == id } }) {
+                    if (isPrn != true && selectedNamedIds.any { id -> administrationTimes.none { it.id == id } }) {
                         scheduleError = "One of the selected administration times was removed. Choose the times again."; ok = false
                     }
 

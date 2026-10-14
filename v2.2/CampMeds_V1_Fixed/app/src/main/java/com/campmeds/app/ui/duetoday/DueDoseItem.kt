@@ -12,7 +12,8 @@ data class DueDoseItem(
     val medication: Medication,
     val patient: Patient,
     val scheduledFor: LocalDateTime,
-    val status: DoseStatus? // always null in the due list: anything already logged is not "due"
+    val status: DoseStatus?,
+    val isAsNeeded: Boolean = false // always null in the due list: anything already logged is not "due"
 ) {
     /** True when this medication is prepackaged with others (and therefore administered as a group). */
     val isPrepackagedMember: Boolean
@@ -99,7 +100,7 @@ fun planGroupMembers(
     val day = now.toLocalDate()
     val logsByMedication = todaysLogs.groupBy { it.medicationId }
 
-    return members.map { medication ->
+    return members.filter { !it.isPrn && it.isActiveOn(day) }.map { medication ->
         val loggedByTime = logsByMedication[medication.id].orEmpty()
             .filter { it.scheduledFor.toLocalDate() == day }
             .associateBy { it.scheduledFor }
@@ -137,7 +138,7 @@ fun buildCurrentDueList(
     val logged = todaysLogs.mapTo(HashSet()) { it.medicationId to it.scheduledFor }
 
     return activeMedications.flatMap { med ->
-        if (!med.isActiveOn(day)) return@flatMap emptyList<DueDoseItem>()
+        if (med.isPrn || !med.isActiveOn(day)) return@flatMap emptyList<DueDoseItem>()
         val patient = patientsById[med.patientId]?.takeIf { it.isActiveOn(day) }
             ?: return@flatMap emptyList<DueDoseItem>()
         med.scheduleTimes.mapNotNull { time ->

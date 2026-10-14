@@ -81,7 +81,6 @@ fun CampMedsNavHost(app: CampMedsApp) {
                 // The home screen lists patients; their due medications live on the patient's due screen.
                 onOpenPatientDue = { patientId -> navController.navigate(Routes.patientDue(patientId)) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                onAddMedication = { patientId -> navController.navigate(Routes.addMedication(patientId)) },
                 onLogout = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(0) { inclusive = true }

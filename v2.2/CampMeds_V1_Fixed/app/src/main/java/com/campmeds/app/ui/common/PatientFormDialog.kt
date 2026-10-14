@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.campmeds.app.data.entity.Patient
+import com.campmeds.app.domain.counselorsForBunks
 
 /** Create (initial = null) or edit a patient: first name, last name, notes, conditions. */
 @Composable
@@ -37,8 +38,11 @@ fun PatientFormDialog(
     val settings by repository.observeSettings().collectAsState(initial = com.campmeds.app.data.entity.CampSettings())
     var start by remember { mutableStateOf(initial?.startDate?.toString().orEmpty()) }
     var end by remember { mutableStateOf(initial?.endDate?.toString().orEmpty()) }
-    var bunk by remember { mutableStateOf(initial?.bunk.orEmpty()) }
-    var counselor by remember { mutableStateOf(initial?.counselor.orEmpty()) }
+    val bunkOptions by repository.observeBunks().collectAsState(initial = emptyList())
+    val divisions by repository.observeDivisions().collectAsState(initial = emptyList())
+    val sessions by repository.observeSessions().collectAsState(initial = emptyList())
+    var bunks by remember { mutableStateOf(initial?.bunks.orEmpty()) }
+    var counselors by remember { mutableStateOf(initial?.counselors.orEmpty()) }
     var division by remember { mutableStateOf(initial?.division.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -47,11 +51,21 @@ fun PatientFormDialog(
         title = { Text(title) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                SessionPresetField(sessions) { start = it.startDate.toString(); end = it.endDate.toString() }
                 DatePresetField("Camper start date (optional, YYYY-MM-DD)", start, settings.startDates) { start = it }
                 DatePresetField("Camper end date (inclusive, YYYY-MM-DD)", end, settings.endDates) { end = it }
                 Text("Before the start and after the end date this camper is in Archive / future campers. Blank dates are unrestricted.")
-                OutlinedTextField(value = bunk, onValueChange = { bunk = it }, label = { Text(settings.bunkLabel) })
-                OutlinedTextField(value = counselor, onValueChange = { counselor = it }, label = { Text(settings.counselorLabel) })
+                if (settings.bunkEnabled) MultiNameField(settings.bunkLabel, bunks,
+                    bunkOptions.filter { it.division == null || it.division == division }.map { it.name }) { selected ->
+                    val previousAuto = counselorsForBunks(bunks, bunkOptions)
+                    val manual = if (settings.allowCounselorOverride) counselors - previousAuto.toSet() else emptyList()
+                    bunks = selected
+                    counselors = (counselorsForBunks(selected, bunkOptions) + manual).distinct()
+                }
+                if (settings.counselorEnabled) MultiNameField(settings.counselorLabel, counselors,
+                    settings.counselorOptions, enabled = settings.allowCounselorOverride) { counselors = it }
+                if (!settings.allowCounselorOverride) Text("Counselors follow the selected bunks. Manual changes are disabled in Settings.")
+                DivisionFilter(division.ifBlank { null }, divisions.map { it.name }) { division = it.orEmpty() }
                 OutlinedTextField(value = division, onValueChange = { division = it }, label = { Text(settings.divisionLabel) })
                 error?.let { Text(it) }
                 OutlinedTextField(
@@ -85,8 +99,8 @@ fun PatientFormDialog(
                         require(from == null || until == null || from <= until)
                         onSave((initial ?: Patient(name = "")).copy(firstName = first.trim(), lastName = last.trim(),
                             notes = notes.ifBlank { null }, conditions = conditions.ifBlank { null },
-                            startDate = from, endDate = until, bunk = bunk.trim().ifBlank { null },
-                            counselor = counselor.trim().ifBlank { null }, division = division.trim().ifBlank { null }))
+                            startDate = from, endDate = until, bunks = bunks, counselors = counselors,
+                            bunk = bunks.firstOrNull(), counselor = counselors.firstOrNull(), division = division.trim().ifBlank { null }))
                     } catch (e: IllegalArgumentException) { error = "Use YYYY-MM-DD dates; end must not precede start." }
                       catch (e: java.time.format.DateTimeParseException) { error = "Use valid YYYY-MM-DD dates." }
                 }

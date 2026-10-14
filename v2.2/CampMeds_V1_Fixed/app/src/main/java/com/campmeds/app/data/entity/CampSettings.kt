@@ -11,5 +11,11 @@ data class CampSettings(
     val endDates: List<String> = emptyList(),
     val bunkLabel: String = "Bunk",
     val counselorLabel: String = "Counselor",
-    val divisionLabel: String = "Camper division"
+    val divisionLabel: String = "Camper division",
+    @androidx.room.ColumnInfo(defaultValue = "1") val bunkEnabled: Boolean = true,
+    @androidx.room.ColumnInfo(defaultValue = "1") val counselorEnabled: Boolean = true,
+    @androidx.room.ColumnInfo(defaultValue = "1") val allowCounselorOverride: Boolean = true,
+    @androidx.room.ColumnInfo(defaultValue = "'[]'")
+    @androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
+    val counselorOptions: List<String> = emptyList()
 )

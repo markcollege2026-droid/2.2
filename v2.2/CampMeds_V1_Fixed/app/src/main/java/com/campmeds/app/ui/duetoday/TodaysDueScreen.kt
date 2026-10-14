@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -64,7 +63,6 @@ fun TodaysDueScreen(
     onOpenExport: () -> Unit,
     onOpenPatientDue: (patientId: String) -> Unit,
     onOpenSettings: () -> Unit,
-    onAddMedication: (patientId: String) -> Unit,
     onLogout: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -105,11 +103,9 @@ fun TodaysDueScreen(
 
     // Reactive: the permission-gated controls follow the live session, not a one-time read.
     val currentUser by Session.currentUser.collectAsState()
-    val canAddMedication = Session.hasAtLeast(currentUser, Role.ADMIN)
-    val isAdmin = canAddMedication
+    val isAdmin = Session.hasAtLeast(currentUser, Role.ADMIN)
 
     var showPatientScan by remember { mutableStateOf(false) }
-    var showPatientPicker by remember { mutableStateOf(false) }
 
     val todaysLogs by remember(today) { repository.observeDoseLogsForDay(today) }
         .collectAsState(initial = emptyList())
@@ -117,10 +113,18 @@ fun TodaysDueScreen(
         .collectAsState(initial = emptyList())
     val patients by repository.observePatients().collectAsState(initial = emptyList())
 
+    val divisions by repository.observeDivisions().collectAsState(initial = emptyList())
+    var division by remember { mutableStateOf<String?>(null) }
+    var selected by remember(today, division) { mutableStateOf<Set<String>>(emptySet()) }
+    var holdPreview by remember { mutableStateOf<List<DueDoseItem>?>(null) }
+    var holdReason by remember { mutableStateOf("") }
+    var holding by remember { mutableStateOf(false) }
+    var holdMessage by remember { mutableStateOf<String?>(null) }
+
     // Derived synchronously from the latest data, so a recorded dose removes its patient immediately when
     // that was their last due medication, and keeps them listed while anything is still due.
-    val dueGroups = remember(now, activeMeds, patients, todaysLogs) {
-        groupByPatient(buildCurrentDueList(now, activeMeds, patients.associateBy { it.id }, todaysLogs))
+    val dueGroups = remember(now, activeMeds, patients, todaysLogs, division) {
+        groupByPatient(buildCurrentDueList(now, activeMeds, patients.filter { division == null || it.division == division }.associateBy { it.id }, todaysLogs))
     }
 
     Scaffold(
@@ -145,20 +149,18 @@ fun TodaysDueScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            if (canAddMedication) {
-                ExtendedFloatingActionButton(
-                    onClick = { showPatientPicker = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Add Medication") }
-                )
-            }
         }
+
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            com.campmeds.app.ui.common.DivisionFilter(division, divisions.map { it.name } + patients.mapNotNull { it.division }) { division = it }
+            if (currentUser != null) OutlinedButton(enabled = selected.isNotEmpty() && !holding, onClick = {
+                scope.launch {
+                    holdReason = ""
+                    holdPreview = repository.previewBulkHold(selected.intersect(dueGroups.map { it.patient.id }.toSet()))
+                }
+            }) { Text("Hold selected patients' due doses (${selected.size})") }
+            holdMessage?.let { Text(it, modifier = Modifier.padding(horizontal = 16.dp)) }
             currentUser?.let {
                 Text(
                     "Logged in as ${it.name} (${it.role})",
@@ -179,7 +181,15 @@ fun TodaysDueScreen(
             } else {
                 LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
                     items(dueGroups, key = { "patient-${it.patient.id}" }) { group ->
-                        PatientDueRow(group = group, onOpen = { onOpenPatientDue(group.patient.id) })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (currentUser != null) Checkbox(checked = group.patient.id in selected, onCheckedChange = { checked ->
+                                selected = if (checked) selected + group.patient.id else selected - group.patient.id
+                            })
+                            Column(Modifier.weight(1f)) {
+                                com.campmeds.app.ui.common.DivisionBadge(group.patient.division, divisions)
+                                PatientDueRow(group = group, onOpen = { onOpenPatientDue(group.patient.id) })
+                            }
+                        }
                         HorizontalDivider()
                     }
                 }
@@ -187,30 +197,26 @@ fun TodaysDueScreen(
         }
     }
 
-    if (showPatientPicker) {
-        AlertDialog(
-            onDismissRequest = { showPatientPicker = false },
-            title = { Text("Add medication for which patient?") },
-            text = {
-                if (patients.isEmpty()) {
-                    Text("There are no patients yet. Add a patient from the Patients screen first.")
-                } else {
-                    LazyColumn {
-                        items(patients, key = { it.id }) { patient ->
-                            ListItem(
-                                headlineContent = { Text(patient.name) },
-                                modifier = Modifier.clickable {
-                                    showPatientPicker = false
-                                    onAddMedication(patient.id)
-                                }
-                            )
-                        }
-                    }
+    holdPreview?.let { preview ->
+        AlertDialog(onDismissRequest = { if (!holding) holdPreview = null }, title = { Text("Confirm bulk hold") }, text = {
+            Column {
+                Text("Hold ${preview.size} currently due doses for ${preview.map { it.patient.id }.distinct().size} selected patients? No future, PRN, or previously recorded dose will be changed.")
+                LazyColumn(Modifier.heightIn(max = 180.dp)) {
+                    items(preview) { Text("${it.patient.name} · ${it.medication.name} · ${it.scheduledFor.toLocalTime()}") }
                 }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { showPatientPicker = false }) { Text("Cancel") } }
-        )
+                OutlinedTextField(value = holdReason, onValueChange = { holdReason = it.take(1000) }, label = { Text("Shared hold reason (optional)") })
+            }
+        }, confirmButton = { TextButton(enabled = preview.isNotEmpty() && !holding, onClick = {
+            holding = true
+            scope.launch {
+                try {
+                    val count = repository.applyBulkHold(preview, holdReason)
+                    holdMessage = "Held $count doses. ${preview.size - count} skipped because already recorded, changed, or no longer eligible."
+                    selected = emptySet(); holdPreview = null
+                } finally { holding = false }
+            }
+        }) { Text(if (holding) "Saving…" else "Confirm hold") } },
+        dismissButton = { TextButton(enabled = !holding, onClick = { holdPreview = null }) { Text("Cancel") } })
     }
 
     if (showPatientScan) {

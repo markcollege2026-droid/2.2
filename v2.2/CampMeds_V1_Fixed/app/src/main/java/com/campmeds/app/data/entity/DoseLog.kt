@@ -30,5 +30,6 @@ data class DoseLog(
     val loggedAt: LocalDateTime,         // actual timestamp of the action
     val loggedByUserId: String?,         // nullable to survive user deletion (FK SET_NULL)
     val wasOverride: Boolean = false,    // true if a LEVEL1_OVERRIDE user bypassed a scan/NDC mismatch
-    val heldReason: String? = null
+    val heldReason: String? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0") val isPrn: Boolean = false
 )

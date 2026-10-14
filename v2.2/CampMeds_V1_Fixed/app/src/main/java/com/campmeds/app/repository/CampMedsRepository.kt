@@ -18,6 +18,11 @@ import kotlinx.coroutines.flow.map
 import com.campmeds.app.auth.Session
 import com.campmeds.app.auth.RecoverySecurity
 import com.campmeds.app.domain.isActiveOn
+import com.campmeds.app.domain.cleanNames
+import com.campmeds.app.domain.counselorsForBunks
+import com.campmeds.app.domain.validDivisionColor
+import com.campmeds.app.ui.duetoday.DueDoseItem
+import com.campmeds.app.ui.duetoday.buildCurrentDueList
 import com.campmeds.app.domain.localDays
 import com.campmeds.app.domain.MedicationChanges
 import com.campmeds.app.export.SheetNames
@@ -124,6 +129,29 @@ class CampMedsRepository(
             endDates = settings.endDates.distinct().sorted()))
     }
 
+    // Shared options never cascade into patient values or historical medication dates.
+    fun observeSessions() = db.campDirectoryDao().sessions()
+    fun observeDivisions() = db.campDirectoryDao().divisions()
+    fun observeBunks() = db.campDirectoryDao().bunks()
+    suspend fun saveSession(session: CampSession) {
+        check(Session.hasAtLeast(Role.ADMIN))
+        require(session.name.isNotBlank() && session.startDate <= session.endDate)
+        require(db.campDirectoryDao().allSessions().none { it.id != session.id && it.name.equals(session.name.trim(), true) }) { "Session name already exists" }
+        db.campDirectoryDao().save(session.copy(name = session.name.trim()))
+    }
+    suspend fun removeSession(id: String) { check(Session.hasAtLeast(Role.ADMIN)); db.campDirectoryDao().removeSession(id) }
+    suspend fun saveDivision(division: Division) {
+        check(Session.hasAtLeast(Role.ADMIN))
+        require(division.name.isNotBlank() && validDivisionColor(division.colorHex)) { "Use a name and #RRGGBB color" }
+        db.campDirectoryDao().save(division.copy(name = division.name.trim()))
+    }
+    suspend fun removeDivision(name: String) { check(Session.hasAtLeast(Role.ADMIN)); db.campDirectoryDao().removeDivision(name) }
+    suspend fun saveBunk(bunk: BunkOption) {
+        check(Session.hasAtLeast(Role.ADMIN)); require(bunk.name.isNotBlank())
+        db.campDirectoryDao().save(bunk.copy(name = bunk.name.trim(), counselors = cleanNames(bunk.counselors)))
+    }
+    suspend fun removeBunk(name: String) { check(Session.hasAtLeast(Role.ADMIN)); db.campDirectoryDao().removeBunk(name) }
+
     // ---------------- Patients ----------------
 
     fun observePatients(): Flow<List<Patient>> = combine(db.patientDao().observeIncludingArchived(), days) {
@@ -147,7 +175,16 @@ class CampMedsRepository(
         require(patient.startDate == null || patient.endDate == null || patient.startDate <= patient.endDate) {
             "End date cannot precede start date"
         }
-        db.patientDao().upsert(normalizePatient(patient))
+        val settings = db.campSettingsDao().get() ?: CampSettings()
+        val old = db.patientDao().getById(patient.id)
+        val bunks = if (settings.bunkEnabled) cleanNames(patient.bunks) else old?.bunks ?: emptyList()
+        val counselors = if (!settings.counselorEnabled) old?.counselors ?: emptyList()
+            else if (!settings.allowCounselorOverride && old?.bunks != bunks)
+                counselorsForBunks(bunks, db.campDirectoryDao().allBunks())
+            else if (!settings.allowCounselorOverride) old?.counselors ?: emptyList()
+            else cleanNames(patient.counselors)
+        db.patientDao().upsert(normalizePatient(patient.copy(bunks = bunks, counselors = counselors,
+            bunk = bunks.firstOrNull(), counselor = counselors.firstOrNull())))
     }
 
     /**
@@ -358,17 +395,20 @@ class CampMedsRepository(
         loggedByUserId: String,
         wasOverride: Boolean = false,
         heldReason: String? = null,
-        expectedMedication: Medication? = null
+        expectedMedication: Medication? = null,
+        isPrn: Boolean = false
     ): Boolean = db.withTransaction {
         if (db.doseLogDao().findExisting(medicationId, scheduledFor.toString()) != null) return@withTransaction false
         val med = db.medicationDao().getById(medicationId) ?: return@withTransaction false
         val patient = db.patientDao().getById(med.patientId) ?: return@withTransaction false
+        if (isPrn && (!med.isPrn || scheduledFor.toLocalDate() != LocalDate.now() || scheduledFor > LocalDateTime.now())) return@withTransaction false
+        if (isPrn && Session.currentUser.value?.id != loggedByUserId) return@withTransaction false
         if (expectedMedication != null && (med != expectedMedication || scheduledFor.toLocalDate() != LocalDate.now())) return@withTransaction false
         if (!med.isActiveOn(scheduledFor.toLocalDate()) || !patient.isActiveOn(scheduledFor.toLocalDate()) ||
             !med.isActiveOn(LocalDate.now()) || !patient.isActiveOn(LocalDate.now())) return@withTransaction false
         db.doseLogDao().upsert(DoseLog(medicationId = medicationId, scheduledFor = scheduledFor,
             status = status, loggedAt = LocalDateTime.now(), loggedByUserId = loggedByUserId,
-            wasOverride = wasOverride, heldReason = if (status == DoseStatus.HELD) heldReason?.trim()?.ifBlank { null } else null))
+            wasOverride = wasOverride, heldReason = if (status == DoseStatus.HELD) heldReason?.trim()?.ifBlank { null } else null, isPrn = isPrn))
         true
     }
 
@@ -394,7 +434,7 @@ class CampMedsRepository(
                 if (existing != null) continue
                 val med = db.medicationDao().getById(dose.medicationId) ?: continue
                 val patient = db.patientDao().getById(med.patientId) ?: continue
-                if (!med.isActiveOn(now.toLocalDate()) || !patient.isActiveOn(now.toLocalDate())) continue
+                if (med.isPrn || !med.isActiveOn(now.toLocalDate()) || !patient.isActiveOn(now.toLocalDate())) continue
                 db.doseLogDao().upsert(
                     DoseLog(
                         medicationId = dose.medicationId,
@@ -409,6 +449,34 @@ class CampMedsRepository(
             }
             recorded
         }
+    }
+
+    /** Read-only confirmation snapshot. PRN requests, future doses and existing outcomes are never included. */
+    suspend fun previewBulkHold(patientIds: Set<String>, at: LocalDateTime = LocalDateTime.now()): List<DueDoseItem> = db.withTransaction {
+        check(Session.hasAtLeast(Role.PROVIDER))
+        val patients = db.patientDao().getAllIncludingArchived().filter { it.id in patientIds }.associateBy { it.id }
+        buildCurrentDueList(at, db.medicationDao().getActiveOn(at.toLocalDate().toString()), patients, db.doseLogDao().getAll())
+    }
+
+    /** Applies only the confirmed snapshot, atomically. Changes/newly due doses after preview are skipped. */
+    suspend fun applyBulkHold(preview: List<DueDoseItem>, reason: String?, at: LocalDateTime = LocalDateTime.now()): Int = db.withTransaction {
+        val user = Session.currentUser.value ?: error("Sign in to hold doses")
+        check(Session.hasAtLeast(user, Role.PROVIDER))
+        var count = 0
+        for (item in preview.distinctBy { it.medication.id to it.scheduledFor }) {
+            val med = db.medicationDao().getById(item.medication.id) ?: continue
+            val patient = db.patientDao().getById(med.patientId) ?: continue
+            if (med != item.medication || patient.id != item.patient.id || med.isPrn ||
+                !patient.isActiveOn(at.toLocalDate()) || !med.isActiveOn(at.toLocalDate()) ||
+                item.scheduledFor.toLocalDate() != at.toLocalDate() || item.scheduledFor > at ||
+                item.scheduledFor.toLocalTime() !in med.scheduleTimes) continue
+            if (db.doseLogDao().findExisting(med.id, item.scheduledFor.toString()) != null) continue
+            db.doseLogDao().upsert(DoseLog(medicationId = med.id, scheduledFor = item.scheduledFor,
+                status = DoseStatus.HELD, loggedAt = at, loggedByUserId = user.id,
+                heldReason = reason?.trim()?.take(1000)?.ifBlank { null }))
+            count++
+        }
+        count
     }
 
     // ---------------- Export ----------------

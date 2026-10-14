@@ -46,7 +46,7 @@ class XlsxExporter {
             "Status", "Logged At", "Logged By", "Override?",
             // Appended (never inserted) so existing column positions stay the same. These identify the records
             // for reporting and for the spreadsheet import; the report itself is still not an update template.
-            "Patient ID", "Medication ID", "PRN?", "Held reason", "Medication created by", "Created at", "Discontinued effective"
+            "Patient ID", "Medication ID", "PRN?", "Held reason", "Medication created by", "Created at", "Discontinued effective", "As-needed administration?"
         )
     }
 
@@ -151,6 +151,7 @@ class XlsxExporter {
         row.createCell(14).setCellValue(med?.createdByName ?: "Unknown (legacy record)")
         row.createCell(15).setCellValue(med?.createdAt?.toString().orEmpty())
         row.createCell(16).setCellValue(med?.discontinuedOn?.toString().orEmpty())
+        row.createCell(17).setCellValue(if (log.isPrn) "YES" else "NO")
     }
 
     // autoSizeColumn() needs java.awt font metrics, which do not exist on Android (it throws at runtime).

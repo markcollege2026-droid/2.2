@@ -128,6 +128,9 @@ fun PatientDueScreen(
         )
     }
 
+    val divisions by repository.observeDivisions().collectAsState(initial = emptyList())
+    var prnMedication by remember { mutableStateOf<Medication?>(null) }
+    prnMedication?.let { med -> patient?.let { p -> PrnAdministration(repository, p, med) { prnMedication = null } } }
     var showMedicationScan by remember { mutableStateOf(false) }
     var scannedMedication by remember { mutableStateOf<Medication?>(null) }
     var scanMessage by remember { mutableStateOf<String?>(null) }
@@ -154,37 +157,23 @@ fun PatientDueScreen(
             )
         }
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            Text(
-                now.format(DateTimeFormatter.ofPattern("MMM d, h:mm a")),
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
-
-            if (entries.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        "No medications due right now for ${patient?.name ?: "this patient"}.\n" +
-                            "Doses appear here at their scheduled time."
-                    )
+        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+            item {
+                com.campmeds.app.ui.common.DivisionBadge(patient?.division, divisions)
+                Text(now.format(DateTimeFormatter.ofPattern("MMM d, h:mm a")))
+            }
+            val prn = activeMeds.filter { it.patientId == patientId && it.isPrn }
+            if (prn.isNotEmpty()) item { Text("As-needed medications", style = MaterialTheme.typography.titleMedium) }
+            items(prn, key = { "prn-${it.id}" }) { med ->
+                OutlinedButton(onClick = { prnMedication = med }) { Text("Request PRN: ${med.name}") }
+            }
+            if (entries.isEmpty()) item { Text("No scheduled medications due right now.") }
+            items(entries, key = { entry -> entryKey(entry) }) { entry ->
+                when (entry) {
+                    is PatientDueEntry.Single -> SingleDoseRow(entry.item, definitionsById) { fromScan = false; selectedItem = entry.item }
+                    is PatientDueEntry.Prepackaged -> PrepackagedGroupCard(entry) { selectedGroup = entry }
                 }
-            } else {
-                LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                    items(entries, key = { entry -> entryKey(entry) }) { entry ->
-                        when (entry) {
-                            is PatientDueEntry.Single -> SingleDoseRow(
-                                item = entry.item,
-                                definitions = definitionsById,
-                                onOpen = { fromScan = false; selectedItem = entry.item }
-                            )
-                            is PatientDueEntry.Prepackaged -> PrepackagedGroupCard(
-                                entry = entry,
-                                onOpen = { selectedGroup = entry }
-                            )
-                        }
-                        HorizontalDivider()
-                    }
-                }
+                HorizontalDivider()
             }
         }
     }
@@ -413,74 +402,20 @@ private fun MedicationScanStep(
         permissionRefused = !granted
     }
 
-    CanNotScanButton(onClick = onScanSkipped)
-
-    Text(
-        "Scan the QR code on $scanTarget, or choose to enter it manually (the button above, or below the camera). " +
-            "Manual entry still requires you to confirm the details before anything is recorded.",
-        style = MaterialTheme.typography.bodySmall
-    )
-
-    when {
-        !hasCameraPermission -> {
-            Text(
-                "Camera scanning is off until camera permission is granted. You can verify manually above.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
-            Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
-                Text("Grant camera permission to scan")
-            }
-            // Android stops showing the dialog after a denial; only Settings can undo that, so say so
-            // instead of offering a button that appears to do nothing.
-            if (permissionRefused && !context.canAskForCameraPermissionAgain()) {
-                Text(
-                    "Android will not ask again. Allow Camera for CampMeds in Settings if you want to scan.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                TextButton(onClick = { context.openAppSettings() }) { Text("Open app settings") }
-            }
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) hasCameraPermission = ContextCompat.checkSelfPermission(context,
+                Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
         }
-
-        cameraProblem != null -> {
-            Text(cameraProblem!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            Text(
-                "Verify manually above, or try the camera again.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            TextButton(onClick = {
-                cameraProblem = null
-                attempt++
-            }) { Text("Try camera again") }
-        }
-
-        else -> {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                key(attempt) {
-                    ScannerView(
-                        onScanned = onCode,
-                        onError = { cameraProblem = it }
-                    )
-                }
-            }
-            // Second, always-visible choice for manual entry while the camera is working.
-            // Solid, opaque background so it never reads as a transparent overlay on the camera or sheet.
-            Button(
-                onClick = onScanSkipped,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Enter manually instead of scanning", fontWeight = FontWeight.SemiBold)
-            }
-        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    MedicationScannerPanel(scanTarget, hasCameraPermission,
+        permissionRefused && !context.canAskForCameraPermissionAgain(), cameraProblem,
+        onManual = onScanSkipped, onGrant = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+        onSettings = { context.openAppSettings() }, onRetry = { cameraProblem = null; attempt++ }) {
+        key(attempt) { ScannerView(onScanned = onCode, onError = { cameraProblem = it }) }
     }
 }
 
@@ -512,7 +447,7 @@ private fun Context.openAppSettings() {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DoseActionSheet(
+internal fun DoseActionSheet(
     item: DueDoseItem,
     repository: CampMedsRepository,
     definitions: Map<String, AdministrationTime>,
@@ -547,7 +482,7 @@ private fun DoseActionSheet(
         AdministrationTimeRules.HH_MM.format(item.scheduledFor.toLocalTime())
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())
@@ -555,7 +490,14 @@ private fun DoseActionSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("${item.patient.name} — ${med.name}", style = MaterialTheme.typography.titleMedium)
-            Text("$label · due ${item.scheduledFor.toLocalTime()} · ${med.dosageInstructions}")
+            Text(if (item.isAsNeeded) "As-needed request · ${med.dosageInstructions}"
+                else "$label · due ${item.scheduledFor.toLocalTime()} · ${med.dosageInstructions}")
+            if (item.isAsNeeded) {
+                val logs by repository.observeHistoryForPatient(item.patient.id).collectAsState(initial = emptyList())
+                val last = logs.filter { it.medicationId == med.id }.maxByOrNull { it.loggedAt }
+                Text("PRN: verify the prescription, minimum interval and maximum daily dose before proceeding.")
+                Text(last?.let { "Last recorded outcome: ${it.status} at ${it.loggedAt}" } ?: "No previous administration recorded.")
+            }
             Text("PRN: ${if (med.isPrn) "Yes" else "No"} · Created by ${med.createdByName ?: "Unknown (legacy record)"}")
 
             if (expired) {
@@ -710,7 +652,7 @@ private fun GroupAdministrationSheet(
     val blocked = selected.filter { MedicationSafeguards.isExpired(it.medication, now.toLocalDate()) }
     val allowed = blocked.isEmpty() || canOverride
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier
                 .verticalScroll(rememberScrollState())

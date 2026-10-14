@@ -199,9 +199,9 @@ jobs:
         run: |
           python3 - <<'PYSCHEMA'
           import base64, gzip, pathlib
-          for path in pathlib.Path("app/schemas").glob("*/6.json"):
+          for path in pathlib.Path("app/schemas").glob("*/7.json"):
               encoded = base64.b64encode(gzip.compress(path.read_bytes())).decode()
-              print("::notice title=Room schema 6 gzip-base64::" + encoded)
+              print("::notice title=Room schema 7 gzip-base64::" + encoded)
           PYSCHEMA
 
       - name: Upload schemas

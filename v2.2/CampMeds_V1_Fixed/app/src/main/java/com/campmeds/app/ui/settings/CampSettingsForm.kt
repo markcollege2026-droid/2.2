@@ -19,6 +19,10 @@ fun CampSettingsForm(repository: CampMedsRepository) {
     var bunk by remember(value) { mutableStateOf(value.bunkLabel) }
     var counselor by remember(value) { mutableStateOf(value.counselorLabel) }
     var division by remember(value) { mutableStateOf(value.divisionLabel) }
+    var bunkEnabled by remember(value) { mutableStateOf(value.bunkEnabled) }
+    var counselorEnabled by remember(value) { mutableStateOf(value.counselorEnabled) }
+    var overrides by remember(value) { mutableStateOf(value.allowCounselorOverride) }
+    var counselors by remember(value) { mutableStateOf(value.counselorOptions) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -31,10 +35,16 @@ fun CampSettingsForm(repository: CampMedsRepository) {
         OutlinedTextField(value = bunk, onValueChange = { bunk = it }, label = { Text("Bunk field name") })
         OutlinedTextField(value = counselor, onValueChange = { counselor = it }, label = { Text("Counselor field name") })
         OutlinedTextField(value = division, onValueChange = { division = it }, label = { Text("Camper division field name (separate)") })
+        Row { Switch(checked = bunkEnabled, onCheckedChange = { bunkEnabled = it }); Text("Enable ${bunk.ifBlank { "bunks" }} field") }
+        Row { Switch(checked = counselorEnabled, onCheckedChange = { counselorEnabled = it }); Text("Enable ${counselor.ifBlank { "counselors" }} field") }
+        Row { Switch(checked = overrides, onCheckedChange = { overrides = it }); Text("Permit manual counselor adjustments") }
+        Text("Disabling a field hides it from entry; existing values are retained.")
+        com.campmeds.app.ui.common.MultiNameField("Counselor options", counselors, emptyList()) { counselors = it }
         Button(onClick = {
             try {
                 fun dates(text: String) = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { LocalDate.parse(it).toString() }.distinct()
-                val updated = CampSettings(startDates = dates(starts), endDates = dates(ends), bunkLabel = bunk.trim(), counselorLabel = counselor.trim(), divisionLabel = division.trim())
+                val updated = value.copy(bunkEnabled = bunkEnabled, counselorEnabled = counselorEnabled,
+                    allowCounselorOverride = overrides, counselorOptions = counselors, startDates = dates(starts), endDates = dates(ends), bunkLabel = bunk.trim(), counselorLabel = counselor.trim(), divisionLabel = division.trim())
                 require(listOf(bunk, counselor, division).all { it.isNotBlank() })
                 scope.launch { repository.saveSettings(updated); message = "Settings saved" }
             } catch (e: Exception) { message = "Provide nonblank field names and valid YYYY-MM-DD dates." }

@@ -71,16 +71,8 @@ fun SettingsScreen(
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
                 }
             )
-        },
-        floatingActionButton = {
-            if (isAdmin) {
-                ExtendedFloatingActionButton(
-                    onClick = { editorTarget = null; showEditor = true; error = null },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Add time") }
-                )
-            }
         }
+
     ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding).fillMaxSize(),
@@ -99,6 +91,13 @@ fun SettingsScreen(
             }
             if (isAdmin) {
                 item { CampSettingsForm(repository) }
+                item { CampDirectorySettings(repository) }
+                item {
+                    Text("Named administration times", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
+                    OutlinedButton(onClick = { editorTarget = null; showEditor = true; error = null }, modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Text("Create named administration time")
+                    }
+                }
                 item {
                     OutlinedButton(
                         onClick = onOpenImport,

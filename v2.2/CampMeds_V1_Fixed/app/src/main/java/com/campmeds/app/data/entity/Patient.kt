@@ -27,5 +27,11 @@ data class Patient(
     val endDate: LocalDate? = null,
     val bunk: String? = null,
     val counselor: String? = null,
-    val division: String? = null
+    val division: String? = null,
+    @androidx.room.ColumnInfo(defaultValue = "'[]'")
+    @androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
+    val bunks: List<String> = listOfNotNull(bunk),
+    @androidx.room.ColumnInfo(defaultValue = "'[]'")
+    @androidx.room.TypeConverters(com.campmeds.app.data.converter.NameListConverters::class)
+    val counselors: List<String> = listOfNotNull(counselor)
 )

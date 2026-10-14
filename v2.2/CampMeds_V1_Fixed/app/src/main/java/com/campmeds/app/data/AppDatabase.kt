@@ -25,13 +25,16 @@ import net.sqlcipher.database.SupportFactory
 @Database(
     entities = [
         Patient::class, Medication::class, DoseLog::class, User::class, AdministrationTime::class,
-        ImportHistoryEntry::class, ChangeHistoryEntry::class, com.campmeds.app.data.entity.CampSettings::class
+        ImportHistoryEntry::class, ChangeHistoryEntry::class, com.campmeds.app.data.entity.CampSettings::class,
+        com.campmeds.app.data.entity.CampSession::class, com.campmeds.app.data.entity.Division::class,
+        com.campmeds.app.data.entity.BunkOption::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
+    abstract fun campDirectoryDao(): com.campmeds.app.data.dao.CampDirectoryDao
     abstract fun campSettingsDao(): com.campmeds.app.data.dao.CampSettingsDao
     abstract fun patientDao(): PatientDao
     abstract fun medicationDao(): MedicationDao
@@ -69,7 +72,7 @@ abstract class AppDatabase : RoomDatabase() {
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
                 .openHelperFactory(factory) // <-- this is what makes the DB file SQLCipher-encrypted
                 // Real, data-preserving migrations only. There is deliberately NO destructive fallback.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
         }
     }

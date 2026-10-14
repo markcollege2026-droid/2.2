@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,13 +50,21 @@ fun ScannerView(
         return
     }
 
-    val previewView = remember { PreviewView(context) }
+    val previewView = remember { PreviewView(context).apply {
+        // TextureView stays within Compose clipping; SurfaceView may draw above sibling controls.
+        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+        scaleType = PreviewView.ScaleType.FIT_CENTER
+        clipChildren = true
+        clipToPadding = true
+    } }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(lifecycleOwner) {
+        var disposed = false
         // Built inside the effect so a teardown that happens while the provider is still starting up cannot
         // touch a camera provider that no longer exists.
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val listener = Runnable {
+            if (disposed) return@Runnable
             // get() throws if the camera provider failed to start (no camera hardware, camera service down):
             // that used to escape as an uncaught exception on the main thread.
             val cameraProvider = try {
@@ -65,7 +74,7 @@ fun ScannerView(
                 return@Runnable
             }
 
-            if (!cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+            if (!runCatching { cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) }.getOrDefault(false)) {
                 onError("This device has no back camera to scan with.")
                 return@Runnable
             }
@@ -100,9 +109,10 @@ fun ScannerView(
         cameraProviderFuture.addListener(listener, ContextCompat.getMainExecutor(context))
 
         onDispose {
-            runCatching { cameraProviderFuture.get().unbindAll() }
+            disposed = true
+            if (cameraProviderFuture.isDone) runCatching { cameraProviderFuture.get().unbindAll() }
         }
     }
 
-    AndroidView(factory = { previewView }, modifier = modifier.fillMaxSize())
+    AndroidView(factory = { previewView }, modifier = modifier.fillMaxSize().clipToBounds())
 }

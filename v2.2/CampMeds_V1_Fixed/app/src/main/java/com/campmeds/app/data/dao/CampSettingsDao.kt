@@ -8,5 +8,6 @@ import kotlinx.coroutines.flow.Flow
 interface CampSettingsDao {
     @Query("SELECT * FROM camp_settings WHERE id = 1")
     fun observe(): Flow<CampSettings?>
+    @Query("SELECT * FROM camp_settings WHERE id = 1") suspend fun get(): CampSettings?
     @Upsert suspend fun save(settings: CampSettings)
 }

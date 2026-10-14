@@ -32,7 +32,9 @@ fun PatientListScreen(
     val allPatients by remember(showArchive) {
         if (showArchive) repository.observeArchive() else repository.observePatients()
     }.collectAsState(initial = emptyList())
-    val patients = allPatients.filter { it.name.contains(query, ignoreCase = true) }
+    val divisions by repository.observeDivisions().collectAsState(initial = emptyList())
+    var division by remember { mutableStateOf<String?>(null) }
+    val patients = allPatients.filter { it.name.contains(query, ignoreCase = true) && (division == null || it.division == division) }
     val scope = rememberCoroutineScope()
 
     var showAddDialog by remember { mutableStateOf(false) }
@@ -57,6 +59,7 @@ fun PatientListScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            com.campmeds.app.ui.common.DivisionFilter(division, divisions.map { it.name } + allPatients.mapNotNull { it.division }) { division = it }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = showArchive, onCheckedChange = { showArchive = it })
                 Text("Archive / future campers (complete)")
@@ -78,8 +81,11 @@ fun PatientListScreen(
                     items(patients, key = { it.id }) { patient ->
                         ListItem(
                             headlineContent = { Text(patient.name) },
-                            supportingContent = { Text("${patient.startDate ?: "No start date"} — ${patient.endDate ?: "No end date"}" +
-                                if (patient.isArchived) " · Manually archived" else "") },
+                            supportingContent = { Column {
+                                com.campmeds.app.ui.common.DivisionBadge(patient.division, divisions)
+                                Text("${patient.startDate ?: "No start date"} — ${patient.endDate ?: "No end date"}" +
+                                    if (patient.isArchived) " · Manually archived" else "")
+                            } },
                             modifier = Modifier.clickable { onOpenPatient(patient.id) }
                         )
                         HorizontalDivider()
