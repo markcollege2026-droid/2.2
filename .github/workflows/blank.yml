@@ -2,7 +2,7 @@ name: Android Build Workflow
 
 on:
   push:
-    branches: ["main", "master", "arena/1c469523-2-2"]
+    branches: ["main", "master"]
   pull_request:
     branches: ["main", "master"]
   workflow_dispatch:
@@ -47,13 +47,13 @@ jobs:
       # Every Gradle run appends to gradle-output.log so the failure step below can publish it: the log and
       # artifact download endpoints are not reachable from every environment, but the API is.
       - name: Run unit tests
-        if: ${{ github.ref != 'refs/heads/arena/1c469523-2-2' && !inputs.size_audit }}
+        if: ${{ !inputs.size_audit }}
         run: |
           set -eo pipefail
           ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a gradle-output.log
 
       - name: Compile instrumented tests
-        if: ${{ github.ref != 'refs/heads/arena/1c469523-2-2' && !inputs.size_audit }}
+        if: ${{ !inputs.size_audit }}
         run: |
           set -eo pipefail
           ./gradlew assembleDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
@@ -62,7 +62,7 @@ jobs:
       # suite is executed on an emulator. Compiling it is still a separate step above: that reports a broken
       # test source quickly, without waiting for a booted device.
       - name: Run instrumented tests
-        if: ${{ github.ref != 'refs/heads/arena/1c469523-2-2' && !inputs.size_audit }}
+        if: ${{ !inputs.size_audit }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
