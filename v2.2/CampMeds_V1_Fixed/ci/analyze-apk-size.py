@@ -248,7 +248,7 @@ def build_report(apk: Path, top_count: int, apkanalyzer: str | None) -> str:
                 "",
                 "## DEX package tree excerpt",
                 "",
-                "`apkanalyzer dex packages --defined-only` output (shallow package rows):",
+                "`apkanalyzer dex packages --defined-only` output (largest inclusive package rows):",
                 "",
                 "```text",
                 *dex_excerpt,
