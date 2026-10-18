@@ -283,10 +283,15 @@ def main() -> int:
         with open(summary_path, "a", encoding="utf-8") as summary:
             summary.write(report)
     if args.github_annotation:
-        # GitHub command messages have a practical size ceiling. Categories,
-        # cost centers, ABIs, and top files all occur before this cutoff.
+        # GitHub truncates annotation messages in its API. Keep the DEX package
+        # tree in a separate annotation so it remains retrievable even when the
+        # main report contains a long largest-files table.
         compact = report[:50_000]
         print(f"::notice title=APK size report::{github_escape(compact)}")
+        dex_excerpt = dex_package_excerpt(tool, args.apk)
+        if dex_excerpt:
+            dex_report = "apkanalyzer dex packages --defined-only\n\n" + "\n".join(dex_excerpt)
+            print(f"::notice title=DEX package size report::{github_escape(dex_report)}")
     return 0
 
 
