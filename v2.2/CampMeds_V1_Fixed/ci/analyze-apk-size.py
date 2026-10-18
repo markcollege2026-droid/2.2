@@ -142,14 +142,18 @@ def dex_package_excerpt(tool: str | None, apk: Path) -> list[str]:
         return [f"apkanalyzer could not read DEX packages: {error}"]
 
     # The package tree can contain thousands of class/member rows. Package rows
-    # near the root give the useful dependency-level view and keep CI output sane.
+    # carry an inclusive byte-size column, so sorting them surfaces heavyweight
+    # dependency namespaces regardless of where they occur in the tree output.
     package_rows = [line.rstrip() for line in completed.stdout.splitlines() if line.startswith("P ")]
-    shallow = []
-    for line in package_rows:
-        package_name = line.split()[-1] if line.split() else ""
-        if package_name.count(".") <= 2:
-            shallow.append(line)
-    return (shallow or package_rows)[:80]
+
+    def byte_size(line: str) -> int:
+        fields = line.split()
+        try:
+            return int(fields[-2])
+        except (IndexError, ValueError):
+            return 0
+
+    return sorted(package_rows, key=byte_size, reverse=True)[:80]
 
 
 def build_report(apk: Path, top_count: int, apkanalyzer: str | None) -> str:
