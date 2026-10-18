@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: ["main", "master"]
   workflow_dispatch:
+    inputs:
+      size_audit:
+        description: "Build and analyze the APK without running the test suites"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -41,11 +47,13 @@ jobs:
       # Every Gradle run appends to gradle-output.log so the failure step below can publish it: the log and
       # artifact download endpoints are not reachable from every environment, but the API is.
       - name: Run unit tests
+        if: ${{ !inputs.size_audit }}
         run: |
           set -eo pipefail
           ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a gradle-output.log
 
       - name: Compile instrumented tests
+        if: ${{ !inputs.size_audit }}
         run: |
           set -eo pipefail
           ./gradlew assembleDebugAndroidTest --console=plain 2>&1 | tee -a gradle-output.log
@@ -54,6 +62,7 @@ jobs:
       # suite is executed on an emulator. Compiling it is still a separate step above: that reports a broken
       # test source quickly, without waiting for a booted device.
       - name: Run instrumented tests
+        if: ${{ !inputs.size_audit }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -73,6 +82,14 @@ jobs:
         run: |
           set -eo pipefail
           ./gradlew assembleDebug --console=plain 2>&1 | tee -a gradle-output.log
+
+      - name: Analyze APK size
+        run: |
+          python3 ci/analyze-apk-size.py \
+            app/build/outputs/apk/debug/app-debug.apk \
+            --output apk-size-report.md \
+            --top 40 \
+            --github-annotation
 
       # The failure text is published as a job summary and as an annotation: both can be read back through the
       # Actions API, unlike the console log, which some environments cannot download.
@@ -188,4 +205,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: campmeds-debug-apk
-          path: v2.2/CampMeds_V1_Fixed/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            v2.2/CampMeds_V1_Fixed/app/build/outputs/apk/debug/app-debug.apk
+            v2.2/CampMeds_V1_Fixed/apk-size-report.md
