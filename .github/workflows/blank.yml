@@ -43,10 +43,24 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # The wrapper is generated rather than committed. Gradle's distribution is downloaded here, so this step
+      # is also the first network dependency of the job; its output is captured so a failure is diagnosable from
+      # the job summary (the console log is not reachable from every environment).
       - name: Generate Gradle Wrapper
         run: |
-          gradle wrapper --gradle-version 8.7
+          set -o pipefail
+          gradle wrapper --gradle-version 8.7 2>&1 | tee -a gradle-output.log
           chmod +x gradlew
+
+      - name: Diagnose Gradle wrapper setup
+        if: failure()
+        run: |
+          {
+            echo "### Gradle wrapper step failed"
+            echo '```'
+            tail -c 8000 gradle-output.log 2>/dev/null || echo "gradle-output.log missing"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # ------------------------------------------------------------------ signing
       #
