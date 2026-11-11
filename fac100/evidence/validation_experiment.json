@@ -1,0 +1,56 @@
+{
+  "experiment": "validation_experiment",
+  "report": "report.json",
+  "validator": "validate_report.py",
+  "original_sha256_before": "38185b97ef36629279159f4898fb93eec0ee4638ba9c250f43fa9d33e34c0b33",
+  "original_sha256_after": "38185b97ef36629279159f4898fb93eec0ee4638ba9c250f43fa9d33e34c0b33",
+  "original_report_unchanged": true,
+  "removed_required_section": "research",
+  "tampered_copy_kepts_as_evidence": "evidence/report_tampered_missing_research.json",
+  "steps": [
+    {
+      "step": 1,
+      "action": "Validate the completed report",
+      "command": "python3 validate_report.py report.json --check-evidence",
+      "exit_code": 0,
+      "observed": "RESULT : VALID"
+    },
+    {
+      "step": 2,
+      "action": "Delete the required 'research' section from a temporary copy and validate it",
+      "command": "python3 validate_report.py <tmp>/report_missing_research.json --check-evidence",
+      "exit_code": 1,
+      "observed": "RESULT : INVALID (31 error(s)); mentions 'research': True; 31 error line(s)"
+    },
+    {
+      "step": 3,
+      "action": "Hash the original report before and after the experiment",
+      "command": "sha256sum report.json (before vs after)",
+      "exit_code": 0,
+      "observed": "before=38185b97ef36629279159f4898fb93eec0ee4638ba9c250f43fa9d33e34c0b33 after=38185b97ef36629279159f4898fb93eec0ee4638ba9c250f43fa9d33e34c0b33 unchanged=True"
+    },
+    {
+      "step": 4,
+      "action": "Re-validate the original report",
+      "command": "python3 validate_report.py report.json --check-evidence",
+      "exit_code": 0,
+      "observed": "RESULT : VALID"
+    }
+  ],
+  "expected_exit_codes": [
+    0,
+    1,
+    0,
+    0
+  ],
+  "observed_exit_codes": [
+    0,
+    1,
+    0,
+    0
+  ],
+  "missing_section_detected": true,
+  "passed": true,
+  "consistent_with_report_json": true,
+  "generated_utc": "2026-11-10T23:16:51Z"
+}

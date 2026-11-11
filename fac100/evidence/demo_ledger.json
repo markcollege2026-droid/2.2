@@ -1,0 +1,166 @@
+{
+  "summary": {
+    "committed_transactions": 3,
+    "rejected_transactions": 8,
+    "totals_cents": {
+      "DEPOSIT": 25000,
+      "WITHDRAWAL": 20000,
+      "REFUND": 4000
+    },
+    "counts": {
+      "DEPOSIT": 1,
+      "WITHDRAWAL": 1,
+      "REFUND": 1
+    },
+    "initial_balances_cents": {
+      "cust-1": 5000
+    },
+    "initial_total_cents": 5000,
+    "balances_cents": {
+      "cust-1": 6000
+    },
+    "total_balance_cents": 6000,
+    "refund_reconciliation_cents": 6000,
+    "payments": {
+      "pay-1001": {
+        "account_id": "cust-1",
+        "captured_cents": 25000,
+        "refunded_cents": 4000,
+        "remaining_cents": 21000
+      }
+    },
+    "rejections_by_code": {
+      "DUPLICATE_TRANSACTION_ID": 1,
+      "INSUFFICIENT_FUNDS": 1,
+      "REFUND_EXCEEDS_PAYMENT": 1,
+      "PAYMENT_NOT_FOUND": 1,
+      "INVALID_TRANSACTION_TYPE": 1,
+      "INVALID_AMOUNT": 3
+    },
+    "invariants": {
+      "ledger_balances_reconcile": true,
+      "no_negative_balances": true,
+      "no_over_refunded_payments": true,
+      "all_committed_types_valid": true,
+      "committed_ids_unique": true
+    },
+    "invariants_ok": true
+  },
+  "ledger": [
+    {
+      "sequence": 1,
+      "txn_id": "pay-1001",
+      "type": "DEPOSIT",
+      "amount_cents": 25000,
+      "amount_display": "250.00",
+      "account_id": "cust-1",
+      "payment_id": null,
+      "balance_after_cents": 30000,
+      "recorded_at": "2026-11-10T23:16:51.486825+00:00"
+    },
+    {
+      "sequence": 2,
+      "txn_id": "wd-1002",
+      "type": "WITHDRAWAL",
+      "amount_cents": 20000,
+      "amount_display": "200.00",
+      "account_id": "cust-1",
+      "payment_id": null,
+      "balance_after_cents": 10000,
+      "recorded_at": "2026-11-10T23:16:51.486854+00:00"
+    },
+    {
+      "sequence": 3,
+      "txn_id": "ref-1003",
+      "type": "REFUND",
+      "amount_cents": 4000,
+      "amount_display": "40.00",
+      "account_id": "cust-1",
+      "payment_id": "pay-1001",
+      "balance_after_cents": 6000,
+      "recorded_at": "2026-11-10T23:16:51.486864+00:00"
+    }
+  ],
+  "rejections": [
+    {
+      "sequence": 1,
+      "txn_id": "pay-1001",
+      "type": "DEPOSIT",
+      "amount_cents": 25000,
+      "account_id": "cust-1",
+      "code": "DUPLICATE_TRANSACTION_ID",
+      "message": "transaction id 'pay-1001' was already committed",
+      "recorded_at": "2026-11-10T23:16:51.486973+00:00"
+    },
+    {
+      "sequence": 2,
+      "txn_id": "wd-1004",
+      "type": "WITHDRAWAL",
+      "amount_cents": 1000000000,
+      "account_id": "cust-1",
+      "code": "INSUFFICIENT_FUNDS",
+      "message": "withdrawal of 1000000000 exceeds balance 6000",
+      "recorded_at": "2026-11-10T23:16:51.486994+00:00"
+    },
+    {
+      "sequence": 3,
+      "txn_id": "ref-1005",
+      "type": "REFUND",
+      "amount_cents": 30000,
+      "account_id": "cust-1",
+      "code": "REFUND_EXCEEDS_PAYMENT",
+      "message": "refund of 30000 would bring total refunds to 34000 against captured 25000",
+      "recorded_at": "2026-11-10T23:16:51.487007+00:00"
+    },
+    {
+      "sequence": 4,
+      "txn_id": "ref-1006",
+      "type": "REFUND",
+      "amount_cents": 100,
+      "account_id": "cust-1",
+      "code": "PAYMENT_NOT_FOUND",
+      "message": "no committed capture with id 'ghost-pay'",
+      "recorded_at": "2026-11-10T23:16:51.487017+00:00"
+    },
+    {
+      "sequence": 5,
+      "txn_id": "tr-1007",
+      "type": "TRANSFER",
+      "amount_cents": 100,
+      "account_id": "cust-1",
+      "code": "INVALID_TRANSACTION_TYPE",
+      "message": "unsupported transaction type: 'TRANSFER'",
+      "recorded_at": "2026-11-10T23:16:51.487037+00:00"
+    },
+    {
+      "sequence": 6,
+      "txn_id": "dp-1008",
+      "type": "DEPOSIT",
+      "amount_cents": 0,
+      "account_id": "cust-1",
+      "code": "INVALID_AMOUNT",
+      "message": "amount must be > 0 cents, got 0",
+      "recorded_at": "2026-11-10T23:16:51.487052+00:00"
+    },
+    {
+      "sequence": 7,
+      "txn_id": "dp-1009",
+      "type": "DEPOSIT",
+      "amount_cents": 12.5,
+      "account_id": "cust-1",
+      "code": "INVALID_AMOUNT",
+      "message": "amount must be an integer number of cents, got float",
+      "recorded_at": "2026-11-10T23:16:51.487064+00:00"
+    },
+    {
+      "sequence": 8,
+      "txn_id": "wd-1010",
+      "type": "WITHDRAWAL",
+      "amount_cents": -500,
+      "account_id": "cust-1",
+      "code": "INVALID_AMOUNT",
+      "message": "amount must be > 0 cents, got -500",
+      "recorded_at": "2026-11-10T23:16:51.487080+00:00"
+    }
+  ]
+}

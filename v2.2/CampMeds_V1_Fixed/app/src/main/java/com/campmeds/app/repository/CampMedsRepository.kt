@@ -27,10 +27,19 @@ data class AdministrationTimeUsage(
     val doses: Int
 )
 
+/**
+ * Everything the UI needs. The database is resolved through [dbProvider] on every call instead of being
+ * captured once: a restore replaces the database file and closes the old instance, and a captured
+ * reference would then point at a closed database (every later write would fail silently from the UI's
+ * point of view). Tests keep using the plain `CampMedsRepository(db)` constructor.
+ */
 class CampMedsRepository(
-    private val db: AppDatabase,
+    private val dbProvider: () -> AppDatabase,
     private val ndcApiClient: NdcApiClient = NdcApiClient()
 ) {
+    constructor(db: AppDatabase, ndcApiClient: NdcApiClient = NdcApiClient()) : this({ db }, ndcApiClient)
+
+    private val db: AppDatabase get() = dbProvider()
     // ---------------- Auth ----------------
 
     suspend fun login(pin: String): User? {
@@ -255,21 +264,27 @@ class CampMedsRepository(
         loggedByUserId: String,
         wasOverride: Boolean = false
     ) {
-        val existing = db.doseLogDao().findExisting(medicationId, scheduledFor.toString())
-        val entry = (existing ?: DoseLog(
-            medicationId = medicationId,
-            scheduledFor = scheduledFor,
-            status = status,
-            loggedAt = LocalDateTime.now(),
-            loggedByUserId = loggedByUserId,
-            wasOverride = wasOverride
-        )).copy(
-            status = status,
-            loggedAt = LocalDateTime.now(),
-            loggedByUserId = loggedByUserId,
-            wasOverride = wasOverride
-        )
-        db.doseLogDao().upsert(entry)
+        // Read-then-write inside ONE transaction. Outside a transaction two taps (or two coroutines on
+        // dispatchers) could both see "no record yet" and each insert their own row, which is exactly the
+        // duplicate-administration record this app must never create. Inside the transaction the second
+        // writer sees the first writer's row and updates it instead.
+        db.withTransaction {
+            val existing = db.doseLogDao().findExisting(medicationId, scheduledFor.toString())
+            val entry = (existing ?: DoseLog(
+                medicationId = medicationId,
+                scheduledFor = scheduledFor,
+                status = status,
+                loggedAt = LocalDateTime.now(),
+                loggedByUserId = loggedByUserId,
+                wasOverride = wasOverride
+            )).copy(
+                status = status,
+                loggedAt = LocalDateTime.now(),
+                loggedByUserId = loggedByUserId,
+                wasOverride = wasOverride
+            )
+            db.doseLogDao().upsert(entry)
+        }
     }
 
     /**
@@ -340,9 +355,10 @@ class CampMedsRepository(
     companion object {
         @Volatile private var instance: CampMedsRepository? = null
 
-        fun getInstance(db: AppDatabase): CampMedsRepository =
+        /** [dbProvider] is evaluated per call, so the repository survives a database restore. */
+        fun getInstance(dbProvider: () -> AppDatabase): CampMedsRepository =
             instance ?: synchronized(this) {
-                instance ?: CampMedsRepository(db).also { instance = it }
+                instance ?: CampMedsRepository(dbProvider).also { instance = it }
             }
     }
 }

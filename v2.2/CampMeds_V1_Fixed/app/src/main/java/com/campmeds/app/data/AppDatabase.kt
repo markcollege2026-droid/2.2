@@ -21,13 +21,22 @@ import com.campmeds.app.data.entity.Patient
 import com.campmeds.app.data.entity.User
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
+import java.io.File
+
+/**
+ * The current database schema version.
+ *
+ * It is a single constant so that the @Database annotation, the restore validator and the JVM
+ * migration-registry test cannot drift apart. Bump it together with a new migration in Migrations.kt.
+ */
+const val SCHEMA_VERSION = 5
 
 @Database(
     entities = [
         Patient::class, Medication::class, DoseLog::class, User::class, AdministrationTime::class,
         ImportHistoryEntry::class, ChangeHistoryEntry::class
     ],
-    version = 5,
+    version = SCHEMA_VERSION,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -40,24 +49,40 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun importHistoryDao(): ImportHistoryDao
 
     companion object {
-        private const val DB_NAME = "campmeds_encrypted.db"
+        const val DB_NAME = "campmeds_encrypted.db"
 
         @Volatile private var instance: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase =
             instance ?: synchronized(this) {
-                instance ?: build(context.applicationContext).also { instance = it }
+                instance ?: build(context.applicationContext, DB_NAME).also { instance = it }
             }
 
-        /** For instrumented tests: closes the singleton so the next getInstance() re-opens the DB file with the stored key. */
-        fun closeAndResetForTesting() {
+        /** The encrypted database file this app uses. Shared with the backup/restore code. */
+        fun databaseFile(context: Context): File = context.getDatabasePath(DB_NAME)
+
+        /**
+         * Opens a database with a different file name, for instrumented tests that must not touch
+         * the live data (backup/restore tests in particular). The same SQLCipher key is used.
+         */
+        fun buildForTesting(context: Context, name: String): AppDatabase = build(context.applicationContext, name)
+
+        /** Closes the singleton so the next getInstance() re-opens the (possibly replaced) file. */
+        fun closeInstance() {
             synchronized(this) {
                 instance?.close()
                 instance = null
             }
         }
 
-        private fun build(context: Context): AppDatabase {
+        /** Kept for the existing tests/README wording; identical to [closeInstance]. */
+        fun closeAndResetForTesting() = closeInstance()
+
+        private fun build(context: Context, name: String): AppDatabase {
+            // A restore that was interrupted between "move the live file aside" and "put the new file
+            // in place" is repaired here, before Room ever opens the file. See DatabaseRestoreManager.
+            DatabaseRestoreManager.recoverInterruptedRestore(context)
+
             // Loads the native SQLCipher libs before Room opens the DB.
             SQLiteDatabase.loadLibs(context)
 
@@ -65,10 +90,10 @@ abstract class AppDatabase : RoomDatabase() {
             val bytes = SQLiteDatabase.getBytes(passphrase)
             val factory = SupportFactory(bytes)
 
-            return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
+            return Room.databaseBuilder(context, AppDatabase::class.java, name)
                 .openHelperFactory(factory) // <-- this is what makes the DB file SQLCipher-encrypted
                 // Real, data-preserving migrations only. There is deliberately NO destructive fallback.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(*ALL_MIGRATIONS)
                 .build()
         }
     }

@@ -1,0 +1,18 @@
+==============================================================================
+fac100 transaction-system test run
+python     : 3.11.2 (Linux-6.1.158+-x86_64-with-glibc2.36)
+started_utc: 2026-11-10T23:15:58Z
+suite root : /home/user/2.2/fac100/transaction_system/tests
+repeat_concurrency: 10
+==============================================================================
+.................................................................................................................
+----------------------------------------------------------------------
+Ran 113 tests in 0.695s
+
+OK
+==============================================================================
+tests=113 passed=113 failed=0 skipped=0 duration=0.70s
+csv      : test_results.csv
+log      : evidence/unittest_run.txt
+summary  : evidence/test_summary.json
+RESULT   : PASS

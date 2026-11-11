@@ -14,6 +14,7 @@ import androidx.navigation.navArgument
 import com.campmeds.app.CampMedsApp
 import com.campmeds.app.auth.Session
 import com.campmeds.app.ui.addmedication.AddEditMedicationScreen
+import com.campmeds.app.ui.backup.BackupScreen
 import com.campmeds.app.ui.dosehistory.DoseHistoryScreen
 import com.campmeds.app.ui.duetoday.TodaysDueScreen
 import com.campmeds.app.ui.export.ExportScreen
@@ -34,6 +35,7 @@ object Routes {
     const val PATIENT_DUE = "patients/{patientId}/due"
     const val DOSE_HISTORY = "patients/{patientId}/history"
     const val SETTINGS = "settings"
+    const val BACKUP = "backup"
     const val ADD_EDIT_MEDICATION = "patients/{patientId}/medication?medicationId={medicationId}"
 
     fun patientDetail(patientId: String) = "patients/$patientId"
@@ -130,7 +132,22 @@ fun CampMedsNavHost(app: CampMedsApp) {
             SettingsScreen(
                 repository = app.repository,
                 onBack = { navController.popBackStack() },
-                onOpenImport = { navController.navigate(Routes.IMPORT) }
+                onOpenImport = { navController.navigate(Routes.IMPORT) },
+                onOpenBackup = { navController.navigate(Routes.BACKUP) }
+            )
+        }
+
+        // Administrator backup/restore. After a successful restore the session is cleared (the restored
+        // database may not contain the signed-in user) and the app returns to the sign-in screen.
+        composable(Routes.BACKUP) {
+            BackupScreen(
+                backups = app.backups,
+                restoreManager = app.restoreManager,
+                onBack = { navController.popBackStack() },
+                onRestored = {
+                    Session.logout()
+                    navController.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+                }
             )
         }
 

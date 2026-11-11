@@ -1,0 +1,633 @@
+{
+  "meta": {
+    "report_id": "fac100-v2-2026-11-10",
+    "title": "FRONTIER ADMISSION CHALLENGE (FAC-100) VERSION 2 - execution report",
+    "generated_utc": "2026-11-10T23:13:04Z",
+    "schema_version": "1.0.0",
+    "sandbox": {
+      "os": "Debian GNU/Linux 12 (bookworm), 2 vCPU, 3.9 GB RAM, Python 3.11.2",
+      "python": "3.11.2",
+      "cpu_count": 2,
+      "network_access": "Tool-level HTTP fetch/search reached arena.ai and help.arena.ai. Shell egress restricted to an allowlist (github.com, codeload.github.com, api.github.com, registry.npmjs.org, pypi.org, files.pythonhosted.org); no package installs were needed because all deliverables are stdlib-only."
+    }
+  },
+  "reasoning": {
+    "problem_id": "fac100-scheduling-five-jobs",
+    "valid_orderings": [
+      {
+        "sequence": "ABDEC",
+        "slots": [
+          "A",
+          "B",
+          "D",
+          "E",
+          "C"
+        ]
+      },
+      {
+        "sequence": "BDAEC",
+        "slots": [
+          "B",
+          "D",
+          "A",
+          "E",
+          "C"
+        ]
+      },
+      {
+        "sequence": "BDEAC",
+        "slots": [
+          "B",
+          "D",
+          "E",
+          "A",
+          "C"
+        ]
+      }
+    ],
+    "count": 3,
+    "unique": false,
+    "reasoning_steps": [
+      "From B < E < C and A < C, job C must sit after both E and A, and E may not be last, so C is the only job that can occupy slot 5: suppose C were in slot 4 or earlier; then E < C <= 4 and E is not slot 1, so E is in slot 2 or 3. If E = 2 then B = 1 (B < E), forcing D = 2, but slot 2 is already E. If E = 3 then B is 1 or 2; D = B + 1, and B = 2 would put D in slot 3 (occupied by E), so B = 1 and D = 2, leaving slots 4 and 5 for A and C, which contradicts C <= 4. Hence C is always last (slot 5).",
+      "With C fixed at slot 5, slots 1-4 hold A, B, D, E subject to: the block (B, D) contiguous, E in {2, 3, 4}, and B < E. Case E = 4: the block occupies (1,2) leaving A in slot 3 -> ABDEC, or occupies (2,3) leaving A in slot 1 -> BDAEC. Case E = 3: the block must occupy (1,2) (a block at (2,3) would put D on E) leaving A in slot 4 -> BDEAC. Case E = 2: B < E forces B = 1 and D = 2 = E, impossible. Total 3 orderings.",
+      "The solution is therefore not unique: the three valid schedules are ABDEC, BDAEC and BDEAC; every other one of the 120 permutations violates at least one constraint.",
+      "Cross-check by code: enumerate_schedule.py enumerates all 120 permutations and applies the predicate (method 1), then independently re-derives valid schedules by slot arithmetic over the fused block plus A, C, E without enumerating five-job permutations (method 2). Both return exactly the same three orderings."
+    ],
+    "enumeration": {
+      "permutations_enumerated": 120,
+      "brute_force_count": 3,
+      "constructive_count": 3,
+      "methods_agree": true,
+      "script": "enumerate_schedule.py",
+      "evidence": "evidence/schedule_enumeration.json"
+    }
+  },
+  "software_engineering": {
+    "package": "transaction_system",
+    "money_unit": "integer cents",
+    "tests": {
+      "total": 59,
+      "passed": 59,
+      "failed": 0,
+      "skipped": 0,
+      "csv": "test_results.csv",
+      "summary": "evidence/test_summary.json",
+      "run_command": "python3 run_tests.py",
+      "repeat_concurrency_runs": 10,
+      "repeat_concurrency_tests_passed": 113
+    },
+    "requirements_coverage": [
+      {
+        "requirement": "Monetary amounts are integer cents; floats and bools are rejected rather than coerced",
+        "status": "covered",
+        "evidence": "transaction_system/tests/test_money.py (11 tests) + tests.test_transactions.TestInvalidInput.test_float_amount_rejected_not_rounded"
+      },
+      {
+        "requirement": "Supports deposits, withdrawals and refunds",
+        "status": "covered",
+        "evidence": "tests.test_transactions.TestDepositsAndWithdrawals, tests.test_refunds.TestRefunds"
+      },
+      {
+        "requirement": "Rejects invalid transaction types",
+        "status": "covered",
+        "evidence": "tests.test_transactions.TestInvalidInput.test_invalid_transaction_types_rejected (7 bad values)"
+      },
+      {
+        "requirement": "Rejects negative and zero-value transactions",
+        "status": "covered",
+        "evidence": "tests.test_transactions.TestInvalidInput.test_zero_and_negative_amounts_rejected, tests.test_refunds.TestRefunds.test_refund_of_zero_or_negative_rejected"
+      },
+      {
+        "requirement": "Duplicate transaction IDs cannot be processed twice",
+        "status": "covered",
+        "evidence": "tests.test_transactions.TestDuplicateIds (4 tests) + tests.test_concurrency.TestConcurrency.test_concurrent_duplicate_ids_commit_once"
+      },
+      {
+        "requirement": "Withdrawals that would make the balance negative are rejected",
+        "status": "covered",
+        "evidence": "tests.test_transactions.TestInsufficientFunds (3 tests) + concurrency overdraw test"
+      },
+      {
+        "requirement": "Cumulative refunds may not exceed the original captured payment",
+        "status": "covered",
+        "evidence": "tests.test_refunds.TestRefunds.test_cumulative_refunds_may_not_exceed_capture, test_exact_remaining_refund_allowed_then_blocked, test_cap_is_checked_before_balance"
+      },
+      {
+        "requirement": "Every refund references its original capture transaction ID",
+        "status": "covered",
+        "evidence": "tests.test_refunds.TestRefunds.test_refund_referencing_nonexistent_payment_rejected / _a_withdrawal_ / _a_refund_ / _without_payment_reference_"
+      },
+      {
+        "requirement": "Complete history of committed transactions is preserved",
+        "status": "covered",
+        "evidence": "tests.test_transactions.TestDepositsAndWithdrawals.test_history_preserves_order_and_balances; immutable LedgerEntry snapshots"
+      },
+      {
+        "requirement": "Rejected transactions cannot partially modify state",
+        "status": "covered",
+        "evidence": "tests.test_atomicity.TestAtomicity (9 tests) plus validate-then-commit design in transaction_system/system.py"
+      },
+      {
+        "requirement": "Audit summary is produced",
+        "status": "covered",
+        "evidence": "transaction_system/audit.py + tests.test_transactions.test_audit_summary_invariants_hold + evidence/audit_summary.txt"
+      },
+      {
+        "requirement": "Concurrent processing is tested meaningfully",
+        "status": "covered",
+        "evidence": "tests.test_concurrency (6 tests, 20-40 workers, forced 1 microsecond GIL switch interval, plus a documented test seam that widens the check->commit window) + mutation_probe.py proving the suite deterministically detects a removed lock"
+      }
+    ],
+    "mutation_probe": {
+      "lock_removed_detected": true,
+      "refund_cap_disabled_detected": true,
+      "evidence": "evidence/mutation_probe.txt"
+    },
+    "defects_found_and_fixed": [
+      {
+        "id": "BUG-1",
+        "description": "Refund initially credited the account, so a deposit plus refund created money out of nothing and the audit conservation identity failed (11 of the 57 tests then in the suite failed on the first full run).",
+        "resolution": "Refund now debits funds still held in the account (money returned to the payer) and is rejected with INSUFFICIENT_FUNDS if funds were already withdrawn; cap check runs before the balance check. Audit identity is initial + deposits - withdrawals - refunds."
+      },
+      {
+        "id": "BUG-2",
+        "description": "Audit reconciliation omitted pre-seeded initial balances, so ledger_balances_reconcile was false for any account that started with a balance.",
+        "resolution": "TransactionSystem tracks initial balances and build_audit_summary includes initial_total_cents in the conservation identity."
+      },
+      {
+        "id": "BUG-3",
+        "description": "The concurrency tests were vacuous and, after a first fix, flaky: replacing the engine lock with a no-op still passed on some runs because CPython's GIL rarely switches inside the short check-then-commit window (one mutation-probe rerun reported 'mutation A not detected').",
+        "resolution": "Tests now raise contention (20-40 workers), set sys.setswitchinterval(1e-6), and use a documented _before_commit test seam that widens the window by 2 ms: with the lock, threads serialise and results stay correct; without it, every thread commits and overdraw is guaranteed. Five consecutive probe runs detected both mutations."
+      }
+    ]
+  },
+  "research": {
+    "questions": [
+      {
+        "id": "Q1",
+        "question": "How is the model/orchestrator selected for Agent Mode?",
+        "answer": "By random assignment per session, not user choice. The help center states Arena 'routes every real session to a randomly chosen model' and that a new chat 'is powered by a new dedicated orchestrator model'; every model on the Agent leaderboard is available. The methodology post describes randomising component selections to form a multi-intervention randomised controlled trial, and states that today only the orchestrator is randomised (K=1). The sampling probabilities and any routing heuristics are not published.",
+        "confidence": "partially_verified",
+        "sources": [
+          {
+            "title": "How to use Agent Mode on Arena",
+            "url": "https://help.arena.ai/articles/5432423882-how-to-use-agent-mode",
+            "last_updated": "rendered as '1 month ago' (~2026-10-08; search index 2026-10-08)",
+            "accessed": "2026-11-10",
+            "quote": "Arena's Agent Mode routes every real session to a randomly chosen model and watches how that model actually does the work."
+          },
+          {
+            "title": "Agent Arena: Causal Evaluation of Agents in the Real World",
+            "url": "https://arena.ai/blog/agent-arena-methodology",
+            "published": "2026-06-04",
+            "last_updated": "2026-10-15",
+            "accessed": "2026-11-10",
+            "quote": "by randomizing the component selections, we create a multi-intervention randomized controlled trial"
+          }
+        ]
+      },
+      {
+        "id": "Q2",
+        "question": "Is the underlying model identity necessarily disclosed to users?",
+        "answer": "No. The help center states that, unlike Battle Mode, Agent Mode does not currently reveal the orchestrator model after feedback is submitted, by design, to keep focus on task completion and to support fair evaluation. The qualifier 'currently' means the policy may change; no source promises permanent non-disclosure, and nothing documents disclosure through other channels.",
+        "confidence": "verified",
+        "sources": [
+          {
+            "title": "How to use Agent Mode on Arena",
+            "url": "https://help.arena.ai/articles/5432423882-how-to-use-agent-mode",
+            "last_updated": "rendered as '1 month ago' (~2026-10-08)",
+            "accessed": "2026-11-10",
+            "quote": "Unlike Battle Mode, Agent Mode does not currently reveal the orchestrator model after feedback is submitted."
+          }
+        ]
+      },
+      {
+        "id": "Q3",
+        "question": "Can the underlying model change during an active session?",
+        "answer": "Yes, as a documented reliability exception. The default is that the model selected at session start remains for the whole conversation, but 'if a response is likely to fail and leave the session in a broken state, the system may automatically switch to a different model'. The detection logic, thresholds and frequency are not documented, so a session cannot be assumed to be 100% single-model.",
+        "confidence": "verified",
+        "sources": [
+          {
+            "title": "How to use Agent Mode on Arena",
+            "url": "https://help.arena.ai/articles/5432423882-how-to-use-agent-mode",
+            "last_updated": "rendered as '1 month ago' (~2026-10-08)",
+            "accessed": "2026-11-10",
+            "quote": "When you start a new Agent Mode chat session, a model is selected and will remain the same throughout the conversation. To improve reliability, if a response is likely to fail and leave the session in a broken state, the system may automatically switch to a different model so the session can continue."
+          }
+        ]
+      },
+      {
+        "id": "Q4",
+        "question": "What are the current five agent leaderboard signals?",
+        "answer": "Confirmed Success, Praise vs Complaint, Steerability, Bash Reliability (previously Bash Recovery) and Tool Hallucination. The signal-definitions page dated 2026-10-12 is the authoritative source; the leaderboard columns match it. The headline 'Net Improvement' aggregates the five as treatment effects versus the average model.",
+        "confidence": "verified",
+        "sources": [
+          {
+            "title": "Agent Arena Signal Definitions",
+            "url": "https://arena.ai/resources/agent-arena-signals",
+            "last_updated": "2026-10-12",
+            "accessed": "2026-11-10",
+            "quote": "Bash Reliability (previously known as Bash Recovery)... Tool Hallucinations"
+          },
+          {
+            "title": "Agent Arena leaderboard (Capabilities / Work)",
+            "url": "https://arena.ai/leaderboard/agent/work",
+            "last_updated": "data snapshot 2026-11-08",
+            "accessed": "2026-11-10",
+            "quote": "Net Improvement | Confirmed Success | Praise vs Complaint | Steerability | Bash Reliability | Tool Hallucination"
+          }
+        ]
+      },
+      {
+        "id": "Q5",
+        "question": "How does Arena distinguish a tool hallucination from a legitimate tool call?",
+        "answer": "The published criterion is availability plus validity at call time: a call is clean when it invokes a tool that exists in the agent's available toolset with a valid signature and arguments; it is a hallucination when the model invents a tool name, uses a non-existent signature, references a capability it does not have, or leaks malformed text into the tool field. The environment is also used as ground truth (the absence of the tool it tried to call). The classifier implementation and edge-case bucketing are not documented, so no specific mechanism is asserted.",
+        "confidence": "partially_verified",
+        "sources": [
+          {
+            "title": "Agent Arena Signal Definitions",
+            "url": "https://arena.ai/resources/agent-arena-signals",
+            "last_updated": "2026-10-12",
+            "accessed": "2026-11-10",
+            "quote": "Calling a real function with valid arguments is clean; calling a tool that was never registered, or claiming a file-editing capability that isn't there, counts as a hallucination."
+          },
+          {
+            "title": "Agent Arena: Causal Evaluation of Agents in the Real World",
+            "url": "https://arena.ai/blog/agent-arena-methodology",
+            "published": "2026-06-04",
+            "last_updated": "2026-10-15",
+            "accessed": "2026-11-10",
+            "quote": "the absence of a tool it tried to call"
+          }
+        ]
+      },
+      {
+        "id": "Q6",
+        "question": "What does Arena mean by confirmed success?",
+        "answer": "Only an explicit 'yes' to the completion pop-up ('Did this complete your task?') for that task. A 'no' does not count, and neither does silence, walking away, saying 'perfect, thanks', or clicking accept. There is no partial credit for work that looks right but was never validated. Because it requires an active confirmation, it is a deliberately strict, likely under-counting signal.",
+        "confidence": "verified",
+        "sources": [
+          {
+            "title": "Agent Arena Signal Definitions",
+            "url": "https://arena.ai/resources/agent-arena-signals",
+            "last_updated": "2026-10-12",
+            "accessed": "2026-11-10",
+            "quote": "We prompt the user with a pop-up that asks: 'Did this complete your task?' If the user clicks 'yes', the task counts towards a confirmed success... There is no partial credit"
+          },
+          {
+            "title": "Agent Arena: Causal Evaluation of Agents in the Real World",
+            "url": "https://arena.ai/blog/agent-arena-methodology",
+            "published": "2026-06-04",
+            "last_updated": "2026-10-15",
+            "accessed": "2026-11-10",
+            "quote": "we use the final approval or disapproval of a given task's trajectory to determine the outcome"
+          }
+        ]
+      }
+    ],
+    "conflicts": [
+      {
+        "topic": "Bash signal: 'Bash Recovery' (turns to recover) vs 'Bash Reliability' (failures per call)",
+        "sources": [
+          "https://arena.ai/blog/agent-arena-methodology (2026-06-04, updated 2026-10-15)",
+          "https://arena.ai/resources/agent-arena-signals (2026-10-12)",
+          "https://help.arena.ai/articles/5432423882-how-to-use-agent-mode"
+        ],
+        "assessment": "The methodology post still carries June prose and a table using 'Bash recovery' / turns-to-recover, while the signal-definitions page renames and redefines it as failures per non-exempt call. The methodology post itself points to the 2026-10-01 methodology update for 'the latest signals and updated definitions', so the definitions page is authoritative and the blog/help wording is stale on naming and on the scoring unit."
+      },
+      {
+        "topic": "Are the five signals equally weighted in the headline score?",
+        "sources": [
+          "https://help.arena.ai/articles/5432423882-how-to-use-agent-mode (equal weights)",
+          "https://arena.ai/leaderboard/agent/work FAQ as returned by the search index, snapshot 2026-11-08 (Bash Reliability at half weight)"
+        ],
+        "assessment": "Unresolved conflict. The help center says every signal gets one vote and the average is equally weighted; the leaderboard FAQ text indexed on 2026-11-08 says Bash Reliability carries half the weight of each other signal. The rendered leaderboard page I fetched shows the FAQ questions but not the answers, so I could not confirm the half-weight sentence on the live page. Treat weights as uncertain and do not recompute the published aggregate by hand."
+      },
+      {
+        "topic": "Which leaderboard page is 'the' Agent Arena ranking",
+        "sources": [
+          "https://arena.ai/leaderboard/agent",
+          "https://arena.ai/leaderboard/agent/work"
+        ],
+        "assessment": "There are multiple agent boards (e.g. a Capabilities/Work board with 57 models and 1,605,949 sessions dated 2026-11-08) with different populations and different leaders at different snapshot dates. Figures are only meaningful with the board name and snapshot date attached; cross-board comparisons are invalid."
+      },
+      {
+        "topic": "'Model stays the same' vs 'model may change' within one session",
+        "sources": [
+          "https://help.arena.ai/articles/5432423882-how-to-use-agent-mode"
+        ],
+        "assessment": "Both statements occur in a single FAQ answer. Accurate summary: fixed by default for the session, with an undocumented automatic switch on anticipated failure. Not a true contradiction, but a common misquote."
+      },
+      {
+        "topic": "Secondary sources drift further from primary definitions",
+        "sources": [
+          "https://eseospace.com/blog/what-is-arena-agent-leaderboard/ (2026-11-02)",
+          "https://x.com/arena/status/2064021507681276234 (2026-06-08)"
+        ],
+        "assessment": "The June Arena post uses the pre-October signal names; the third-party explainer adds unverifiable structural claims about a separate reliability board. Neither is Arena documentation; both are excluded from the factual claims above and used only as corroboration where consistent with primary sources."
+      }
+    ],
+    "limitations": [
+      "Help-center update date is rendered as a relative string ('1 month ago'); the 2026-10-08 value comes from the search index, not the page.",
+      "arena.ai/agent-mode returns a JavaScript shell with no article text, so it contributed nothing.",
+      "Leaderboard FAQ answers render collapsed; one weighting claim was only visible in search-index-extracted text.",
+      "No source documents the tool-hallucination classifier, the auto-switch detector, or model sampling probabilities; these remain unanswered rather than guessed.",
+      "Leaderboard numbers are live and were changing during the session; all figures are tied to a snapshot date."
+    ]
+  },
+  "agentic_execution": {
+    "project_dir": "fac100",
+    "deliverables": [
+      {
+        "path": "report.json",
+        "kind": "file",
+        "exists": true,
+        "note": "this machine-readable report"
+      },
+      {
+        "path": "report_schema.json",
+        "kind": "file",
+        "exists": true,
+        "note": "JSON Schema draft 2020-12 subset used by the validator"
+      },
+      {
+        "path": "REPORT.md",
+        "kind": "file",
+        "exists": true,
+        "note": "detailed human-readable report with evidence and scoring"
+      },
+      {
+        "path": "validate_report.py",
+        "kind": "file",
+        "exists": true,
+        "note": "dependency-free structural + semantic validator"
+      },
+      {
+        "path": "validation_experiment.py",
+        "kind": "file",
+        "exists": true,
+        "note": "runs the remove-a-section experiment and records real exit codes"
+      },
+      {
+        "path": "test_results.csv",
+        "kind": "file",
+        "exists": true,
+        "note": "per-test outcomes from run_tests.py"
+      },
+      {
+        "path": "run_tests.py",
+        "kind": "file",
+        "exists": true,
+        "note": "test entry point; writes CSV, log and summary JSON"
+      },
+      {
+        "path": "transaction_system",
+        "kind": "directory",
+        "exists": true,
+        "note": "implementation, tests, README, demo"
+      },
+      {
+        "path": "research.md",
+        "kind": "file",
+        "exists": true,
+        "note": "research findings, quotes, dates, conflicts"
+      },
+      {
+        "path": "enumerate_schedule.py",
+        "kind": "file",
+        "exists": true,
+        "note": "brute force + constructive schedule enumeration"
+      },
+      {
+        "path": "evidence",
+        "kind": "directory",
+        "exists": true,
+        "note": "captured execution outputs"
+      }
+    ],
+    "validation_experiment": {
+      "steps": [
+        {
+          "step": 1,
+          "action": "Validate the completed report",
+          "command": "python3 validate_report.py report.json --check-evidence",
+          "exit_code": 0,
+          "observed": "VALID, 0 structural and 0 semantic errors"
+        },
+        {
+          "step": 2,
+          "action": "Copy report to a temp file, delete the required 'research' section, validate the copy",
+          "command": "python3 validate_report.py <tmp>/report_tampered.json --check-evidence",
+          "exit_code": 1,
+          "observed": "INVALID, missing required property 'research' plus dependent cross-check failures"
+        },
+        {
+          "step": 3,
+          "action": "Confirm the original report is byte-identical (SHA-256) to before the experiment",
+          "command": "sha256sum report.json (before vs after)",
+          "exit_code": 0,
+          "observed": "hashes match; original never modified"
+        },
+        {
+          "step": 4,
+          "action": "Re-validate the original report",
+          "command": "python3 validate_report.py report.json --check-evidence",
+          "exit_code": 0,
+          "observed": "VALID again, confirming the script and report were left intact"
+        }
+      ],
+      "passed": true,
+      "original_report_unchanged": true,
+      "evidence": "evidence/validation_experiment.json"
+    }
+  },
+  "reliability": {
+    "production_failure_modes": [
+      "Crash between balance mutation and ledger append: commit is in-memory with no write-ahead log, so a process kill mid-transaction leaves no durable record; a real deployment needs a database transaction or an append-only WAL with idempotent replay.",
+      "Single-process assumption: the in-process lock does not coordinate across workers or hosts, so two API instances sharing an account could both pass the balance check; production needs optimistic concurrency (version column) or row locks in a shared store.",
+      "Unbounded idempotency and ledger growth: committed transaction IDs and the ledger are kept forever in memory, so memory grows without limit and restart loses idempotency history, allowing an old transaction ID to be replayed after a redeploy.",
+      "Clock and currency assumptions: timestamps use wall-clock UTC and every amount is assumed to be in one currency's minor unit; multi-currency or non-2-decimal currencies (e.g. JPY, KWD) would need explicit minor-unit metadata.",
+      "Refund policy mismatch with the business: refunds debit held funds, so a customer who withdraws before requesting a refund is rejected. If the real requirement is refund-to-source independent of wallet balance, this rule would incorrectly block legitimate refunds."
+    ],
+    "assumptions": [
+      "A DEPOSIT represents a captured payment and is the only refundable object; refunds may only reference committed deposits.",
+      "Only committed transaction IDs are burned; a rejected attempt does not consume its ID, so a corrected retry with the same ID is allowed (tested explicitly).",
+      "Refunds return funds to the original payment method, therefore they debit the account balance and cannot exceed either the capture's remaining refundable amount or the funds actually held.",
+      "A refund must be credited to the same account that captured the payment.",
+      "Duplicate detection is global across transaction types, not per account.",
+      "Amounts are integers in a single currency's minor unit, with an upper bound of 10^15 cents.",
+      "The isolated working directory for this test is fac100/ inside the assigned session workspace; no pre-existing repository file was read for content or modified (git status showed only '?? fac100/')."
+    ],
+    "research_limitations": [
+      "Help-center update date is relative ('1 month ago'); only the search-index date pins it approximately.",
+      "Signal weighting conflict (equal vs half weight) could not be resolved from rendered pages.",
+      "Tool-hallucination classifier, model-switch detector and sampling probabilities are unpublished; answers stop where documentation stops.",
+      "Leaderboard figures are live snapshots and differ between boards and dates."
+    ],
+    "unavailable_capabilities": [
+      "No direct, first-party API or structured export of the Agent leaderboard or signal definitions; only HTML/JS pages and search-index extracts were available.",
+      "arena.ai/agent-mode renders as an empty JavaScript shell, so its content could not be inspected.",
+      "No external accounts or authenticated services were used, per the challenge rules, so user-side behaviour (pop-up confirmation, model reveal) was verified only from documentation.",
+      "Shell egress is allowlisted, so no package installation or third-party HTTP probing from bash; all code was written against the standard library only."
+    ],
+    "errors_encountered": [
+      "A malformed raise expression was introduced into system.py while writing the duplicate-ID check; it was caught by inspection before any execution and replaced with a normal TransactionRejected raise.",
+      "A garbled f-string in validate_report.py (invalid join expression) was caught by py_compile immediately after writing and fixed before use.",
+      "Eleven of 57 tests failed on the first full run; root causes were the refund credit/debit model (BUG-1), the audit identity omitting initial balances (BUG-2), and several of my own test expectations that encoded the wrong arithmetic (e.g. balance after a refund, and format_cents(10^14-1) which is 999999999999.99, not 1000000000000.99). All were fixed by correcting the implementation for BUG-1/BUG-2 and correcting the assertions where the test was wrong.",
+      "The mutation probe initially reported 'mutation A not detected', exposing that the concurrency tests were vacuous (BUG-3); fixed by forcing thread-switch intervals and higher contention, then re-probing."
+    ],
+    "unmet_requirements": [
+      "None of the eleven required deliverables is missing and no required test category was skipped. Concurrency testing is in-process thread based; cross-process or multi-host concurrency could not be exercised in this sandbox and is listed as a residual risk rather than claimed."
+    ],
+    "residual_risks": [
+      "The engine is in-memory only: no persistence, no crash recovery, no WAL, no database transaction isolation.",
+      "Thread-safety is proven for CPython threads under high contention, not for free-threaded builds, other interpreters, or multi-process deployments.",
+      "Refund debiting held funds is a policy choice that may not match the intended business semantics; it is documented and tested but arguable.",
+      "Duplicate-ID semantics (rejected IDs are reusable) may surprise callers expecting strict idempotency keys.",
+      "Audit summary recomputes from the in-memory ledger, so it can only be as trustworthy as the process it runs in; there is no independent reconciliation against an external payment provider.",
+      "Scores in this report are self-assessed and reference only my own evidence; they are not an independent certification of model identity or capability."
+    ]
+  },
+  "scoring": {
+    "categories": [
+      {
+        "name": "reasoning",
+        "score": 20,
+        "max": 20,
+        "justification": "All three valid schedules were found (ABDEC, BDAEC, BDEAC) with a complete exhaustion argument that C must occupy slot 5, followed by case analysis for E in {2,3,4}. Two independent code paths (120-permutation brute force and constructive slot arithmetic) agree exactly, the uniqueness question is answered correctly ('not unique'), and the written reasoning is falsifiable against the enumeration.",
+        "deductions": [],
+        "evidence_refs": [
+          "enumerate_schedule.py",
+          "evidence/schedule_enumeration.json",
+          "report.json#reasoning"
+        ]
+      },
+      {
+        "name": "coding",
+        "score": 22,
+        "max": 25,
+        "justification": "A complete, stdlib-only transaction engine with integer-cent money, validate-then-commit atomicity, per-capture refund accounting, immutable ledger history and a self-checking audit summary. 57 automated tests pass, covering every required category, plus a 10x concurrency repetition run (93 tests) and a mutation probe proving the suite detects a removed lock and a disabled refund cap. Three real defects were found and fixed during the session rather than papered over.",
+        "deductions": [
+          "In-memory only: no durable storage, crash recovery, or database-level isolation (-2).",
+          "Concurrency evidence is single-process threaded only; no multi-process or multi-host test (-1)."
+        ],
+        "evidence_refs": [
+          "test_results.csv",
+          "evidence/test_summary.json",
+          "evidence/mutation_probe.txt",
+          "transaction_system/README.md"
+        ]
+      },
+      {
+        "name": "research",
+        "score": 18,
+        "max": 20,
+        "justification": "All six questions answered from primary Arena documentation that was fetched and quoted verbatim, with publication/update dates, explicit confidence labels separating verified facts from interpretation, five documented conflicts (including the stale Bash Recovery naming and the equal-vs-half-weight contradiction), and explicit statements of what the documentation does not establish.",
+        "deductions": [
+          "Two questions cannot be fully answered from public sources (sampling probabilities; hallucination classifier implementation) (-1).",
+          "The help-center update date is only approximate because the page renders a relative timestamp (-1)."
+        ],
+        "evidence_refs": [
+          "research.md",
+          "report.json#research"
+        ]
+      },
+      {
+        "name": "agent_execution",
+        "score": 24,
+        "max": 25,
+        "justification": "All eleven required deliverables exist and were produced by execution, not description: the schedule script ran (exit 0), 57 tests ran (exit 0), the demo produced an audit summary, the mutation probe ran, and the validation experiment executed four real subprocess validations with exit codes 0, 1, 0, 0 while the original report stayed byte-identical.",
+        "deductions": [
+          "The validation test could be made stronger by asserting specific error text rather than only exit code and presence of the missing-section error (-1)."
+        ],
+        "evidence_refs": [
+          "evidence/validation_experiment.json",
+          "evidence/validation_experiment_output.txt",
+          "report.json#agentic_execution"
+        ]
+      },
+      {
+        "name": "reliability",
+        "score": 9,
+        "max": 10,
+        "justification": "Self-review lists five concrete production failure modes with mechanisms, seven explicit assumptions, research limitations, unavailable capabilities, the actual errors encountered (including a vacuous test suite discovered by my own mutation probe and fixed), and residual risks that name the weakest parts of the design.",
+        "deductions": [
+          "One arguable policy choice (refunds debiting held funds) is documented but could still be the wrong business semantics (-1)."
+        ],
+        "evidence_refs": [
+          "REPORT.md#section-5",
+          "report.json#reliability"
+        ]
+      }
+    ],
+    "total": 93,
+    "max_total": 100,
+    "thresholds": {
+      "strong_pass": 90,
+      "pass": 85,
+      "borderline": 75
+    },
+    "minimum_gates": {
+      "coding_min": 15,
+      "coding_actual": 22,
+      "agent_execution_min": 15,
+      "agent_execution_actual": 24
+    },
+    "verdict": "STRONG_PASS",
+    "disclaimer": "This score is provisional and self-assessed from my own evidence. It demonstrates what this agent session produced; it is not an independent certification, does not prove the identity of the underlying model, and does not establish that one model performed every action in the session (Arena may switch models for reliability)."
+  },
+  "evidence_index": [
+    {
+      "path": "evidence/schedule_enumeration.json",
+      "description": "Machine-readable output of the 120-permutation enumeration: 3 valid schedules, both methods agreeing."
+    },
+    {
+      "path": "evidence/unittest_run.txt",
+      "description": "Captured verbose unittest output from the canonical run (57 tests)."
+    },
+    {
+      "path": "evidence/test_summary.json",
+      "description": "Machine-readable test summary: counts, per-category pass/fail, duration, exit code."
+    },
+    {
+      "path": "evidence/test_results_repeat_concurrency_10.csv",
+      "description": "Per-test CSV for the 10x concurrency repetition run (93 tests)."
+    },
+    {
+      "path": "evidence/test_summary_repeat10.json",
+      "description": "Summary of the 10x concurrency repetition run."
+    },
+    {
+      "path": "evidence/repeat_concurrency_10.txt",
+      "description": "Console output of the 10x concurrency repetition run."
+    },
+    {
+      "path": "evidence/mutation_probe.txt",
+      "description": "Mutation probe output proving the suite detects a no-op lock and a disabled refund cap."
+    },
+    {
+      "path": "evidence/audit_summary.txt",
+      "description": "Audit summary and full ledger/rejection dump from the demo run."
+    },
+    {
+      "path": "evidence/demo_ledger.json",
+      "description": "JSON ledger, rejection log and audit summary from the demo run."
+    },
+    {
+      "path": "evidence/validation_experiment.json",
+      "description": "Machine-readable record of the validation experiment: commands, exit codes, observations."
+    },
+    {
+      "path": "evidence/validation_experiment_output.txt",
+      "description": "Console output of the validation experiment run."
+    },
+    {
+      "path": "evidence/report_tampered_missing_research.json",
+      "description": "The tampered copy (research section deleted) used in validation experiment step 2; kept for auditability."
+    },
+    {
+      "path": "evidence/environment.txt",
+      "description": "Sandbox facts: OS, Python version, CPU count, git status showing only fac100/ is new."
+    }
+  ]
+}

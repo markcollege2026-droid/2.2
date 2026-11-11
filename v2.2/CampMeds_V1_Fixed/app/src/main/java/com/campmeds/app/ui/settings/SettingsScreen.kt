@@ -45,7 +45,8 @@ import java.time.LocalTime
 fun SettingsScreen(
     repository: CampMedsRepository,
     onBack: () -> Unit,
-    onOpenImport: () -> Unit = {}
+    onOpenImport: () -> Unit = {},
+    onOpenBackup: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val currentUser by Session.currentUser.collectAsState()
@@ -101,6 +102,16 @@ fun SettingsScreen(
                     Text(
                         "Import patients and medications from Excel, or update records using a CampMeds template. " +
                             "Every import is previewed and needs your confirmation.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    OutlinedButton(
+                        onClick = onOpenBackup,
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                    ) { Text("Backups and restore") }
+                    Text(
+                        "Create a verified, encrypted copy of all data, or restore one. Restoring replaces the " +
+                            "current data only after the backup has been checked, and keeps a safety copy.",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(16.dp)
                     )

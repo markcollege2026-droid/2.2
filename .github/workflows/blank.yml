@@ -2,9 +2,11 @@ name: Android Build Workflow
 
 on:
   push:
-    branches: ["main", "master"]
+    # main/master are the released lines. "arena/**" are the working branches this repository is developed
+    # on, so a push there is built and tested instead of needing a manual dispatch.
+    branches: ["main", "master", "arena/**"]
   pull_request:
-    branches: ["main", "master"]
+    branches: ["main", "master", "arena/**"]
   workflow_dispatch:
 
 jobs:
@@ -44,6 +46,27 @@ jobs:
         run: |
           set -eo pipefail
           ./gradlew testDebugUnitTest --console=plain 2>&1 | tee -a gradle-output.log
+
+      # Lint is reported, not enforced, in this step: the repository has no lint baseline yet, so failing the
+      # build on pre-existing findings would hide the test results behind an unrelated error. The report is
+      # uploaded below and the findings are printed into the job log.
+      - name: Lint (reported, not blocking)
+        continue-on-error: true
+        run: |
+          set -eo pipefail
+          ./gradlew lintDebug --console=plain 2>&1 | tee -a gradle-output.log
+
+      # Room writes the current schema next to the committed ones while compiling. If that file is not tracked
+      # by git, the repository cannot validate a future migration from this version, so say so loudly.
+      - name: Check Room schema exports
+        if: always()
+        run: |
+          ls -la app/schemas/com.campmeds.app.data.AppDatabase/ || true
+          untracked=$(git status --porcelain -- app/schemas | grep '^??' || true)
+          if [ -n "$untracked" ]; then
+            echo "::warning title=Room schema not committed::generated schema files are missing from git:"
+            echo "$untracked"
+          fi
 
       - name: Compile instrumented tests
         run: |
@@ -181,7 +204,10 @@ jobs:
           path: |
             v2.2/CampMeds_V1_Fixed/app/build/reports/tests
             v2.2/CampMeds_V1_Fixed/app/build/reports/androidTests
+            v2.2/CampMeds_V1_Fixed/app/build/reports/lint-results-debug.html
+            v2.2/CampMeds_V1_Fixed/app/build/reports/lint-results-debug.txt
             v2.2/CampMeds_V1_Fixed/app/build/outputs/androidTest-results
+            v2.2/CampMeds_V1_Fixed/app/schemas
           if-no-files-found: ignore
 
       - name: Upload Build Artifact

@@ -1,0 +1,44 @@
+VALIDATION EXPERIMENT
+==============================================================================
+report    : /home/user/2.2/fac100/report.json
+validator : /home/user/2.2/fac100/validate_report.py
+
+original sha256 (before): 38185b97ef36629279159f4898fb93eec0ee4638ba9c250f43fa9d33e34c0b33
+
+[1] validate the completed report
+    python3 validate_report.py report.json --check-evidence
+    exit=0 | RESULT : VALID
+
+[2] copy the report, delete the required 'research' section, validate
+    removed top-level keys: ['research']
+    tampered copy: <tmp>/report_missing_research.json (deleted after the run)
+    python3 validate_report.py <tmp>/report_missing_research.json --check-evidence
+    exit=1 | RESULT : INVALID (31 error(s))
+    detects missing section: True
+      - $: missing required property 'research'
+      - evidence missing: report.json
+      - evidence missing: report_schema.json
+      - evidence missing: REPORT.md
+      - evidence missing: validate_report.py
+      - evidence missing: validation_experiment.py
+
+[3] confirm the original report was never modified
+    original sha256 (after) : 38185b97ef36629279159f4898fb93eec0ee4638ba9c250f43fa9d33e34c0b33
+    unchanged               : True
+
+[4] re-validate the original report
+    python3 validate_report.py report.json --check-evidence
+    exit=0 | RESULT : VALID
+
+[5] cross-check against the steps recorded inside report.json
+    recorded exit codes: [0, 1, 0, 0]
+    observed exit codes: [0, 1, 0, 0]
+    consistent          : True
+
+==============================================================================
+original_report_unchanged = True
+missing_section_detected  = True
+observed exit codes       = [0, 1, 0, 0] (expected [0, 1, 0, 0])
+consistent with report    = True
+EXPERIMENT: PASS
+evidence: /home/user/2.2/fac100/evidence/validation_experiment.json

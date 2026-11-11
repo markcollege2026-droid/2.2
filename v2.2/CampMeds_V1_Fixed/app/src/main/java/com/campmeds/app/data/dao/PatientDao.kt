@@ -26,7 +26,13 @@ interface PatientDao {
     @Query("SELECT * FROM patients ORDER BY name ASC")
     suspend fun getAllIncludingArchived(): List<Patient>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    /**
+     * @Upsert, not @Insert(REPLACE): REPLACE deletes the existing row and inserts it again, and a patient row
+     * with medications behind it is refused by the RESTRICT foreign key from medications.patientId. That made
+     * every patient-detail edit (the patient form and the import's update mode) fail for any patient who had a
+     * medication — the common case. @Upsert updates the row in place, so nothing is ever deleted.
+     */
+    @Upsert
     suspend fun upsert(patient: Patient)
 
     @Query("UPDATE patients SET isArchived = 1 WHERE id = :id")

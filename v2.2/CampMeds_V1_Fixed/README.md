@@ -142,6 +142,40 @@ Safety rules:
 - Each attempt is logged to `import_history` (ID, time, file name, outcome, counts, no patient values). Patient detail changes are logged by field name only.
 - Limits: 10 MB file, 5,000 rows, 40 columns, first worksheet only, `.xlsx` only.
 
+### Backup and restore (`data/DatabaseBackupManager.kt`, `data/DatabaseRestoreManager.kt`)
+
+Settings → **Backups and restore** (Administrator only). The whole app state lives in one SQLCipher database
+file, so a checkpointed byte copy is a complete backup by construction: patients, medications, schedules and
+named administration times, every administration record with its timestamp and outcome (given / held /
+refused / missed), groups, conditions and notes, bunk, counselor and division, archived records, users,
+settings, the import history and the import change history. The copy stays encrypted with the same
+Keystore-backed key as the live database — a backup file is useless without this install's key, which also
+means it can only be restored on the device that made it, not on another phone or a laptop.
+
+What the code guarantees:
+
+- **Verified before it is published.** The copy is written to `.part`, then checked (byte length, SHA-256,
+  and it must actually open with the device key) before it is renamed. A manifest (`<backup>.db.json`) records
+  the schema version, app version, timestamp, SHA-256 and the row count of every table. The manifest is
+  written last; a `.db` without one is treated as a legacy copy and fully inspected before any restore.
+- **Validated before a restore.** File identity (opens with the key), `PRAGMA integrity_check`, schema version,
+  required tables and the manifest's row counts. A backup from a newer schema is refused with an explanation;
+  it is never "migrated down".
+- **Restore is a rename swap, not a merge.** Validate → stage a copy inside the databases directory →
+  take a verified `pre-restore-` safety copy of the live data → close the database → rename live aside (`.restore-rollback`)
+  → rename the staged file in → reopen and verify (`integrity_check`, `PRAGMA foreign_key_check`, row counts
+  against the manifest). Any failure after the swap puts the original file back and says so on screen.
+- **Interrupted restore self-heals.** If the process dies between the two renames, `DatabaseRestoreManager.recoverInterruptedRestore`
+  (run from `AppDatabase.build()` and from `CampMedsApp.onCreate`) puts the original file back before Room opens
+  anything, and removes stale staging files.
+- **No temporary files are left behind.** `.part` files and orphaned manifests are removed after every backup,
+  after every restore, and on the next start.
+- **Retention is per kind.** Import copies (5), manual copies (10) and pre-restore copies (2) are pruned
+  separately, so a burst of imports can never push out the manual backup an administrator made on purpose.
+- After a restore the session is cleared and the app returns to the sign-in screen: the restored database may
+  not contain the user who was signed in. Every repository resolves the database per call, so nothing holds a
+  closed handle.
+
 Exports: the existing XLSX export layouts are unchanged except that the patient and medication sheets now have **Patient ID** and **Medication ID** columns appended at the end. Reporting exports stay usable.
 
 ### Database migration 4 -> 5 (`data/Migrations.kt`)
@@ -157,7 +191,8 @@ Not yet compiled or run in this environment (no JDK / Android SDK; Maven, Google
 ### Limitations
 
 - Medications have no route or frequency fields in this app; the supported fields are used instead.
-- Restoring a recovery copy is a manual, administrator-level step (there is no in-app restore).
+- Restoring is done in the app (Settings → Backups and restore, Administrator only). Copying a `.db` file
+  onto a device by hand is no longer the supported route; a backup is only usable on the install that made it.
 - The first run after updating runs the 4 -> 5 migration; Room schema JSON for version 5 is generated at build time.
 
 ## What "V1 Fixed" is

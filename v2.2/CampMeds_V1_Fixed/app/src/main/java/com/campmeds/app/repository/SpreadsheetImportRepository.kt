@@ -2,6 +2,7 @@ package com.campmeds.app.repository
 
 import androidx.room.withTransaction
 import com.campmeds.app.data.AppDatabase
+import com.campmeds.app.data.BackupReason
 import com.campmeds.app.data.DatabaseBackupManager
 import com.campmeds.app.data.entity.ChangeHistoryEntry
 import com.campmeds.app.data.entity.ImportHistoryEntry
@@ -34,11 +35,19 @@ import java.util.UUID
  *  - Archiving is never used for an import that is missing rows: absence means "not mentioned", nothing more.
  */
 class SpreadsheetImportRepository(
-    private val db: AppDatabase,
+    /** Resolved per call, so a restore that replaces the database file cannot leave a closed handle here. */
+    private val dbProvider: () -> AppDatabase,
     private val backups: DatabaseBackupManager?,
     /** Test hook: runs inside the transaction just before commit, so a throw proves the rollback. */
     private val beforeCommit: suspend () -> Unit = {}
 ) {
+    constructor(
+        db: AppDatabase,
+        backups: DatabaseBackupManager?,
+        beforeCommit: suspend () -> Unit = {}
+    ) : this({ db }, backups, beforeCommit)
+
+    private val db: AppDatabase get() = dbProvider()
 
     sealed class Outcome {
         data class Completed(val summary: Summary) : Outcome()
@@ -101,7 +110,7 @@ class SpreadsheetImportRepository(
                 )
             }
 
-            backupName = backups?.createVerifiedBackup(db)?.name
+            backupName = backups?.createVerifiedBackup(db, BackupReason.IMPORT)?.name
 
             var summary: Summary? = null
             db.withTransaction {

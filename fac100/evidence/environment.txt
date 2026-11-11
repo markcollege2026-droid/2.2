@@ -1,0 +1,23 @@
+sandbox environment facts (captured 2026-11-10T23:14:06Z)
+===========================================================
+Linux e2b.local 6.1.158+ #1 SMP PREEMPT_DYNAMIC Mon May 11 18:48:24 UTC 2026 x86_64 GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+python: Python 3.11.2
+cpu_count: 2
+               total        used        free      shared  buff/cache   available
+Mem:            3939         236        3758           1         124        3703
+
+working directory: /home/user/2.2/fac100
+
+git status --porcelain (repository root /home/user/2.2):
+?? fac100/
+
+git log -1:
+fc7c004 Merge pull request #3 from markcollege2026-droid/arena/b88caaae-2-2
+
+network reachability from bash (allowlisted hosts only):
+  arena.ai -> 000blocked
+  pypi.org -> 200
+  github.com -> 200

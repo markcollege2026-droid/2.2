@@ -1,0 +1,24 @@
+MUTATION PROBE (tests must catch a deliberately broken engine)
+======================================================================
+
+[1] baseline: concurrency tests with the real lock
+    ran=6 failures=0 errors=0
+
+[2] mutation A: lock replaced by a no-op (no mutual exclusion)
+    ran=6 failures=2 errors=0
+    detected by: test_wide_window_duplicate_ids_commit_once -> AssertionError: 12 != 1
+    detected by: test_wide_window_withdrawals_cannot_overdraw -> AssertionError: 20 != 10 : overdraw not prevented: 20 succeeded
+    mutation detected: True
+
+[3] mutation B: refund cap check disabled
+    ran=13 failures=3 errors=0
+    detected by: test_cap_is_checked_before_balance -> AssertionError: <RejectionCode.INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS'> != <RejectionCode.REFUND_EXCEEDS_PAYM
+    detected by: test_cumulative_refunds_may_not_exceed_capture -> AssertionError: <RejectionCode.INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS'> != <RejectionCode.REFUND_EXCEEDS_PAYM
+    detected by: test_exact_remaining_refund_allowed_then_blocked -> AssertionError: 3000 != 5000
+    mutation detected: True
+
+======================================================================
+baseline_suite_passed=True
+mutation_A_no_lock_detected=True
+mutation_B_refund_cap_detected=True
+RESULT: PASS - the suite detects real regressions

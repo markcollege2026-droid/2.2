@@ -172,3 +172,12 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_change_history_importId` ON `change_history` (`importId`)")
     }
 }
+
+/**
+ * Every migration this build registers, in upgrade order.
+ *
+ * The chain must be contiguous from 1 to [SCHEMA_VERSION] with no gaps: a gap means Room would throw
+ * IllegalStateException on a real device upgrade instead of migrating. MigrationRegistryTest checks that on
+ * the JVM, and AppDatabase.build() registers exactly this list.
+ */
+val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)

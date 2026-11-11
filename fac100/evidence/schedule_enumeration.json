@@ -1,0 +1,98 @@
+{
+  "jobs": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "constraints": [
+    "A<C",
+    "D=B+1",
+    "E not in {1,5}",
+    "E<C",
+    "B<E"
+  ],
+  "permutations_enumerated": 120,
+  "brute_force_count": 3,
+  "constructive_count": 3,
+  "methods_agree": true,
+  "unique_solution": false,
+  "valid_orderings": [
+    {
+      "slots": [
+        [
+          1,
+          "A"
+        ],
+        [
+          2,
+          "B"
+        ],
+        [
+          3,
+          "D"
+        ],
+        [
+          4,
+          "E"
+        ],
+        [
+          5,
+          "C"
+        ]
+      ],
+      "sequence": "ABDEC"
+    },
+    {
+      "slots": [
+        [
+          1,
+          "B"
+        ],
+        [
+          2,
+          "D"
+        ],
+        [
+          3,
+          "A"
+        ],
+        [
+          4,
+          "E"
+        ],
+        [
+          5,
+          "C"
+        ]
+      ],
+      "sequence": "BDAEC"
+    },
+    {
+      "slots": [
+        [
+          1,
+          "B"
+        ],
+        [
+          2,
+          "D"
+        ],
+        [
+          3,
+          "E"
+        ],
+        [
+          4,
+          "A"
+        ],
+        [
+          5,
+          "C"
+        ]
+      ],
+      "sequence": "BDEAC"
+    }
+  ]
+}

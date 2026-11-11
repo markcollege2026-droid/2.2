@@ -1,0 +1,52 @@
+{
+  "started_utc": "2026-11-10T23:15:59Z",
+  "python_version": "3.11.2",
+  "platform": "Linux-6.1.158+-x86_64-with-glibc2.36",
+  "repeat_concurrency": 10,
+  "tests_run": 113,
+  "passed": 113,
+  "failed": 0,
+  "skipped": 0,
+  "unittest_testsRun": 113,
+  "unittest_failures": 0,
+  "unittest_errors": 0,
+  "duration_s": 0.695,
+  "by_category": {
+    "atomicity": {
+      "pass": 9,
+      "fail": 0
+    },
+    "concurrency": {
+      "pass": 60,
+      "fail": 0
+    },
+    "integer_precision": {
+      "pass": 11,
+      "fail": 0
+    },
+    "refunds": {
+      "pass": 13,
+      "fail": 0
+    },
+    "invalid_input": {
+      "pass": 7,
+      "fail": 0
+    },
+    "core_transactions": {
+      "pass": 6,
+      "fail": 0
+    },
+    "duplicates": {
+      "pass": 4,
+      "fail": 0
+    },
+    "insufficient_funds": {
+      "pass": 3,
+      "fail": 0
+    }
+  },
+  "exit_code": 0,
+  "csv_path": "test_results.csv",
+  "log_path": "evidence/unittest_run.txt",
+  "failed_tests": []
+}
