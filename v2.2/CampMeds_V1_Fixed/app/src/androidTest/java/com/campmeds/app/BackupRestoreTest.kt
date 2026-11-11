@@ -326,7 +326,7 @@ class BackupRestoreTest {
 
         assertEquals(1, db.campDirectoryDao().allSessions().size)
         assertEquals("First session", db.campDirectoryDao().allSessions().single().name)
-        assertEquals("#2E7D32", db.campDirectoryDao().divisions().first().single().colorHex)
+        assertEquals("#2E7D32", kotlinx.coroutines.flow.first(db.campDirectoryDao().divisions()).single().colorHex)
         assertEquals(1, db.campDirectoryDao().allBunks().size)
     }
 
