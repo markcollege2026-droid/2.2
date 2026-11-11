@@ -18,6 +18,7 @@ import com.campmeds.app.data.entity.Medication
 import com.campmeds.app.data.entity.Patient
 import com.campmeds.app.data.entity.Role
 import com.campmeds.app.data.entity.User
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -128,11 +129,11 @@ class BackupRestoreTest {
         db.medicationDao().upsert(scheduled)
         db.medicationDao().upsert(prn)
         db.administrationTimeDao().upsert(AdministrationTime(name = "Breakfast", time = LocalTime.of(8, 0)))
-        db.campDirectoryDao().saveSession(
+        db.campDirectoryDao().save(
             CampSession(name = "First session", startDate = LocalDate.of(2026, 7, 1), endDate = LocalDate.of(2026, 7, 20))
         )
-        db.campDirectoryDao().saveDivision(Division(name = "Machaneh Aleph", colorHex = "#2E7D32"))
-        db.campDirectoryDao().saveBunk(BunkOption(name = "Bunk 4", counselors = listOf("Dana", "Eli"), division = "Machaneh Aleph"))
+        db.campDirectoryDao().save(Division(name = "Machaneh Aleph", colorHex = "#2E7D32"))
+        db.campDirectoryDao().save(BunkOption(name = "Bunk 4", counselors = listOf("Dana", "Eli"), division = "Machaneh Aleph"))
         db.doseLogDao().upsert(
             DoseLog(
                 medicationId = scheduled.id,
@@ -326,7 +327,7 @@ class BackupRestoreTest {
 
         assertEquals(1, db.campDirectoryDao().allSessions().size)
         assertEquals("First session", db.campDirectoryDao().allSessions().single().name)
-        assertEquals("#2E7D32", kotlinx.coroutines.flow.first(db.campDirectoryDao().divisions()).single().colorHex)
+        assertEquals("#2E7D32", db.campDirectoryDao().divisions().first().single().colorHex)
         assertEquals(1, db.campDirectoryDao().allBunks().size)
     }
 
