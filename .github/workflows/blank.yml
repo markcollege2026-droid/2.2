@@ -211,6 +211,14 @@ jobs:
             tail -c 60000 "$SOURCE" 2>/dev/null || echo "no output captured"
             echo '```'
           } > failure-report.md
+          # The Gradle log itself is always included: a configuration/script error is what breaks the build,
+          # and the console log endpoint is not reachable from every environment.
+          if [ -s gradle-output.log ]; then
+            echo "Gradle log (tail)" >> failure-report.md
+            echo '```' >> failure-report.md
+            tail -c 30000 gradle-output.log >> failure-report.md
+            echo '```' >> failure-report.md
+          fi
           cat failure-report.md >> "$GITHUB_STEP_SUMMARY"
 
           # One annotation survives per step: it carries the end of the report, where the failure detail is.

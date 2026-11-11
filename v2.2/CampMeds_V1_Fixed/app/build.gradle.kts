@@ -171,17 +171,20 @@ dependencies {
 }
 
 /**
- * A release APK without the persistent key would be either unsigned or signed with the debug key, and both are
- * useless for updating an existing installation. Fail the build with an explanation instead.
+ * A release APK without the persistent key would be unsigned, and an unsigned (or debug-signed) file cannot
+ * update an existing installation. Fail the build with an explanation instead of producing one.
  */
 gradle.taskGraph.whenReady {
-    val buildingRelease = allTasks.any { it.name.startsWith("packageRelease") || it.name.startsWith("assembleRelease") }
-    if (buildingRelease && signingConfigs.findByName("release") == null) {
+    val buildingRelease = allTasks.any {
+        it.name.startsWith("packageRelease") || it.name.startsWith("assembleRelease")
+    }
+    if (buildingRelease && !signingValuesPresent) {
         throw GradleException(
-            "Release signing is not configured. Add the CAMPMEDS_KEYSTORE_BASE64, CAMPMEDS_KEYSTORE_PASSWORD, " +
-                "CAMPMEDS_KEY_ALIAS and CAMPMEDS_KEY_PASSWORD GitHub Actions secrets (see README 'Signing and " +
-                "updates'). Without the original key an APK cannot update an existing installation, so no " +
-                "release APK is produced."
+            "Release signing is not configured, so no release APK was produced. Provide the persistent " +
+                "keystore through CAMPMEDS_KEYSTORE_FILE, CAMPMEDS_KEYSTORE_PASSWORD, CAMPMEDS_KEY_ALIAS and " +
+                "CAMPMEDS_KEY_PASSWORD (the workflow maps them from the CAMPMEDS_* GitHub Actions secrets; see " +
+                "README 'Signing and updates'). Without the original key an APK can never update an existing " +
+                "installation, so signing with a throwaway debug key is deliberately not offered."
         )
     }
 }
