@@ -56,6 +56,38 @@ jobs:
           set -eo pipefail
           ./gradlew lintDebug --console=plain 2>&1 | tee -a gradle-output.log
 
+      # Lint's own summary only lives in the uploaded HTML/TXT report, which cannot be read back from every
+      # environment. Surface the counts and the errors as annotations, which can.
+      - name: Report lint findings
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob
+          import sys
+          import xml.etree.ElementTree as ET
+
+          paths = sorted(glob.glob("app/build/reports/lint-results-debug.xml"))
+          if not paths:
+              print("::warning title=Lint::no lint XML report was produced in this build")
+              sys.exit(0)
+          errors, warnings = [], []
+          for path in paths:
+              try:
+                  root = ET.parse(path).getroot()
+              except Exception:
+                  continue
+              for issue in root.iter("issue"):
+                  location = issue.find("location")
+                  where = "{0}:{1}".format(location.get("file"), location.get("line")) if location is not None else "?"
+                  entry = "{0} | {1} | {2}".format(issue.get("id"), where, (issue.get("message") or "")[:200])
+                  (errors if issue.get("severity") == "Error" else warnings).append(entry)
+          print("::notice title=Lint::{0} error(s), {1} warning(s)".format(len(errors), len(warnings)))
+          for entry in errors[:15]:
+              print("::error title=Lint error::{0}".format(entry.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")))
+          for entry in warnings[:5]:
+              print("::warning title=Lint warning::{0}".format(entry.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")))
+          PY
+
       # Room writes the current schema next to the committed ones while compiling. If that file is not tracked
       # by git, the repository cannot validate a future migration from this version, so say so loudly.
       - name: Check Room schema exports
