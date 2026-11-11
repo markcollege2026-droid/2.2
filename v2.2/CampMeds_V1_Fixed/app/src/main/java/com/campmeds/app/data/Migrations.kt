@@ -229,3 +229,16 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         db.execSQL("CREATE TABLE IF NOT EXISTS bunk_options (name TEXT NOT NULL PRIMARY KEY, counselors TEXT NOT NULL, division TEXT)")
     }
 }
+
+/**
+ * Every migration this build registers, in upgrade order (1 → 2 → … → [SCHEMA_VERSION]).
+ *
+ * The chain must be contiguous from 1 to [SCHEMA_VERSION] with no gaps: a gap means Room would throw
+ * IllegalStateException on a real device upgrade instead of migrating. MigrationRegistryTest checks that on
+ * the JVM, and AppDatabase.build() registers exactly this list. A migration is only ever *added* here — an
+ * existing entry is never removed, reordered or made destructive, because a device at that version will
+ * never run the earlier steps again.
+ */
+val ALL_MIGRATIONS = arrayOf(
+    MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+)

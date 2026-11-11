@@ -144,6 +144,78 @@ Safety rules:
 
 Exports: the existing XLSX export layouts are unchanged except that the patient and medication sheets now have **Patient ID** and **Medication ID** columns appended at the end. Reporting exports stay usable.
 
+### Backup and restore (`data/DatabaseBackupManager.kt`, `data/DatabaseRestoreManager.kt`)
+
+Settings -> **Backups and restore** (Administrator only). The whole app state lives in one SQLCipher database
+file, so a checkpointed byte copy is a complete backup by construction: patients (including multiple bunks and
+counselors, division, conditions and notes), medications and their schedules, PRN records, every administration
+record with its timestamp and outcome (given / held / refused / missed) including the held reason, groups,
+camp sessions, divisions, bunk directory, camp settings, users and recovery answers, import history and import
+change history. The copy stays encrypted with the same Keystore-backed key as the live database.
+
+What the code guarantees:
+
+- **Verified before it is published.** The copy is written to `.part`, then checked (byte length, SHA-256, and it
+  must actually open with the device key and report its tables) before it is renamed. A manifest
+  (`<backup>.db.json`) records the schema version, app version, timestamp, SHA-256 and the row count of every
+  table. The manifest is written last; a `.db` without one is treated as a legacy copy and fully inspected
+  before any restore.
+- **Validated before a restore.** File identity (opens with the key), `PRAGMA integrity_check`, schema version,
+  the tables that schema version must have, and the manifest's checksum and row counts. A backup from a newer
+  schema is refused with an explanation; it is never "migrated down".
+- **Restore is a rename swap, not a merge.** Validate -> stage a copy inside the databases directory -> take a
+  verified `pre-restore-` safety copy of the live data -> close the database -> rename live aside
+  (`.restore-rollback`) -> rename the staged file in -> reopen and verify (`integrity_check`,
+  `PRAGMA foreign_key_check`, row counts against the manifest). Any failure after the swap puts the original
+  file back and says so on screen.
+- **Interrupted restore self-heals.** If the process dies between the two renames,
+  `DatabaseRestoreManager.recoverInterruptedRestore` (run from `AppDatabase.build()` and from
+  `CampMedsApp.onCreate`) puts the original file back before Room opens anything, and removes stale staging files.
+- **No temporary files are left behind.** `.part` files and orphaned manifests are removed after every backup,
+  after every restore, and on the next start.
+- **Retention is per kind.** Import copies (5), manual copies (10) and pre-restore copies (2) are pruned
+  separately, so a burst of imports can never push out the manual backup an administrator made on purpose.
+- After a restore the session is cleared and the app returns to the sign-in screen: the restored database may
+  not contain the user who was signed in. Every repository resolves the database per call, so nothing holds a
+  closed handle.
+
+**Schema versions.** Backups record the schema version of the file they contain (currently **7**). Restoring an
+older, supported backup (for example a **schema 5** file written by the older backup/restore build) is allowed
+only when it passes every validation check; the app's own data-preserving migrations then upgrade it to 7 the
+first time Room opens it, and the screen reports that the file was upgraded. A backup whose schema is newer than
+the app is refused. Missing tables are never filled in silently and no destructive migration exists anywhere.
+
+**Encryption key and portability (important).** A backup is a byte copy of the SQLCipher file, encrypted with the
+passphrase that `DatabaseKeyProvider` stores in *this install's* Android Keystore-backed EncryptedSharedPreferences.
+That passphrase is never exported, so **a backup can only be restored on the install that created it**. On another
+device — or after an uninstall, which removes the Keystore entry — the file cannot be decrypted and restoration is
+refused with a clear message. Moving a database to a new device is not supported by this build.
+
+### Signing and updates (versionCode 5, versionName 1.4-prototype)
+
+The application ID stays `com.campmeds.app`, so an update replaces the installed app in place and keeps its data.
+Android only accepts that update if it is signed with the **same certificate** as the installed copy. No signing
+key is stored in this repository. `app/build.gradle.kts` reads a release keystore from the environment, and the
+workflow (`.github/workflows/blank.yml`) decodes it from repository secrets into a temporary file that is deleted
+before the job ends:
+
+| Secret | Contents |
+|---|---|
+| `CAMPMEDS_KEYSTORE_BASE64` | the release keystore file, base64-encoded (`base64 -w0 release.jks`) |
+| `CAMPMEDS_KEYSTORE_PASSWORD` | the keystore password |
+| `CAMPMEDS_KEY_ALIAS` | the key alias inside that keystore |
+| `CAMPMEDS_KEY_PASSWORD` | the password of that key |
+
+When those secrets are present the workflow builds `app-release.apk` (artifact `campmeds-release-apk`) and prints
+the APK's SHA-256 certificate fingerprint so it can be compared with the installed app. When they are absent the
+release APK is **not** built: Gradle fails an `assembleRelease` with an explanation rather than signing with a
+throwaway debug key, because an APK signed by a different key cannot update an existing installation. The debug
+APK (`campmeds-debug-apk`, application ID `com.campmeds.app.debug`) is unaffected.
+
+**If the original signing key is not available**, installation continuity cannot be guaranteed: no key generated
+now can be used to update an installation signed with the lost key. In that case a new installation (and a manual
+data transfer) would be required, and the released APK must not be presented as an in-place update.
+
 ### Database migration 4 -> 5 (`data/Migrations.kt`)
 
 Schema v4 is the prepackaged group name migration (`MIGRATION_3_4`, from the other update). This step is v4 -> v5.
@@ -157,7 +229,8 @@ Not yet compiled or run in this environment (no JDK / Android SDK; Maven, Google
 ### Limitations
 
 - Medications have no route or frequency fields in this app; the supported fields are used instead.
-- Restoring a recovery copy is a manual, administrator-level step (there is no in-app restore).
+- Restoring is done in the app (Settings -> Backups and restore, Administrator only). Copying a `.db` file
+  onto a device by hand is not a supported route, and a backup is only usable on the install that made it.
 - The first run after updating runs the 4 -> 5 migration; Room schema JSON for version 5 is generated at build time.
 
 ## What "V1 Fixed" is

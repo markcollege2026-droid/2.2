@@ -40,11 +40,27 @@ data class AdministrationTimeUsage(
     val doses: Int
 )
 
+/**
+ * Everything the UI needs.
+ *
+ * The database is resolved through [dbProvider] on every call instead of being captured once: a restore
+ * replaces the database file and closes the old Room instance, and a captured reference would then point at a
+ * closed database (every later write would fail silently from the UI's point of view). Tests keep using the
+ * plain `CampMedsRepository(db)` constructor, which resolves to that same instance every time.
+ */
 class CampMedsRepository(
-    private val db: AppDatabase,
+    private val dbProvider: () -> AppDatabase,
     private val ndcApiClient: NdcApiClient = NdcApiClient(),
     private val days: Flow<LocalDate> = localDays()
 ) {
+    constructor(
+        db: AppDatabase,
+        ndcApiClient: NdcApiClient = NdcApiClient(),
+        days: Flow<LocalDate> = localDays()
+    ) : this({ db }, ndcApiClient, days)
+
+    private val db: AppDatabase get() = dbProvider()
+
     // ---------------- Auth ----------------
 
     suspend fun login(pin: String): User? {
@@ -513,9 +529,10 @@ class CampMedsRepository(
     companion object {
         @Volatile private var instance: CampMedsRepository? = null
 
-        fun getInstance(db: AppDatabase): CampMedsRepository =
+        /** [dbProvider] is evaluated per call, so the repository survives a database restore. */
+        fun getInstance(dbProvider: () -> AppDatabase): CampMedsRepository =
             instance ?: synchronized(this) {
-                instance ?: CampMedsRepository(db).also { instance = it }
+                instance ?: CampMedsRepository(dbProvider).also { instance = it }
             }
     }
 }

@@ -2,9 +2,11 @@ name: Android Build Workflow
 
 on:
   push:
-    branches: ["main", "master", "arena/dd0a2f0b-2-2"]
+    # main/master are the released lines. "arena/**" are the working branches this repository is developed
+    # on, so a push there is built and tested instead of needing a manual dispatch.
+    branches: ["main", "master", "arena/**", "integration/**"]
   pull_request:
-    branches: ["main", "master"]
+    branches: ["main", "master", "arena/**", "integration/**"]
   workflow_dispatch:
 
 jobs:
@@ -45,6 +47,79 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.7
           chmod +x gradlew
+
+      # ------------------------------------------------------------------ signing
+      #
+      # The distributable APK must carry the SAME signing certificate as the installed app, otherwise Android
+      # refuses to install it as an update ("App not installed: package conflicts with an existing package").
+      # The persistent key is therefore read from repository secrets. It is never committed, never echoed, and
+      # the decoded file is removed again before the job ends.
+      #
+      # If the secrets are absent the release build is skipped (with a warning) instead of producing an APK
+      # signed by a throwaway debug key: such a file cannot update an existing installation, and publishing it
+      # would be worse than publishing nothing.
+      - name: Decode signing keystore
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.CAMPMEDS_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Release signing key not configured::secrets.CAMPMEDS_KEYSTORE_BASE64 is not set, so no signed release APK can be produced. The debug APK is still built. See README 'Signing and updates'."
+            exit 0
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/campmeds-release.jks"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "keystore written to a temporary file; it is deleted by the cleanup step"
+          # Only the certificate, never a password: the SHA-256 fingerprint is what an installed app reports,
+          # so it is the value to compare when checking that an update will be accepted.
+          keytool -list -v -keystore "$RUNNER_TEMP/campmeds-release.jks" \
+            -storepass "${{ secrets.CAMPMEDS_KEYSTORE_PASSWORD }}" 2>/dev/null \
+            | grep -E 'Alias name|SHA256:' || echo "::warning title=Keystore unreadable::the keystore secret was decoded but keytool could not read it"
+
+      # Builds the release APK with the persistent key. Gradle fails with an explicit message if the key is
+      # missing (see app/build.gradle.kts), which is why this step is skipped rather than allowed to fail.
+      - name: Build signed release APK
+        if: steps.signing.outputs.available == 'true'
+        env:
+          CAMPMEDS_KEYSTORE_PASSWORD: ${{ secrets.CAMPMEDS_KEYSTORE_PASSWORD }}
+          CAMPMEDS_KEY_ALIAS: ${{ secrets.CAMPMEDS_KEY_ALIAS }}
+          CAMPMEDS_KEY_PASSWORD: ${{ secrets.CAMPMEDS_KEY_PASSWORD }}
+        run: |
+          set -eo pipefail
+          export CAMPMEDS_KEYSTORE_FILE="$RUNNER_TEMP/campmeds-release.jks"
+          ./gradlew assembleRelease --console=plain 2>&1 | tee -a gradle-output.log
+
+      # Reports the certificate the APK actually carries, so the user can compare it with the one on the
+      # installed device (App info -> the version that is currently installed). No secret is printed.
+      - name: Report APK signing certificate
+        if: always() && steps.signing.outputs.available == 'true'
+        run: |
+          python3 - <<'PY'
+          import glob, os, subprocess, sys
+          apks = glob.glob("app/build/outputs/apk/release/*.apk")
+          if not apks:
+              print("::notice title=Release APK::no release APK was produced in this build")
+              sys.exit(0)
+          for apk in apks:
+              print("release artifact:", os.path.basename(apk))
+          build_tools = sorted(glob.glob(os.environ.get("ANDROID_HOME", "/usr/local/lib/android/sdk") + "/build-tools/*"))
+          apksigner = os.path.join(build_tools[-1], "apksigner") if build_tools else "apksigner"
+          for apk in apks:
+              try:
+                  out = subprocess.run([apksigner, "verify", "--print-certs", "-v", apk],
+                                       capture_output=True, text=True, check=False)
+                  for line in (out.stdout or out.stderr).splitlines():
+                      if "SHA-256" in line or "Verified using" in line:
+                          print("::notice title=APK signing certificate::" + line.strip()[:300])
+              except Exception as exc:  # pragma: no cover - diagnostics only
+                  print("::warning title=apksigner unavailable::" + str(exc)[:200])
+          PY
+
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/campmeds-release.jks"
 
       - name: Build Debug APK
         run: |
@@ -217,4 +292,13 @@ jobs:
         with:
           name: campmeds-debug-apk
           path: v2.2/CampMeds_V1_Fixed/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+
+      # The signed, installable-as-an-update artifact. Only produced when the persistent key is configured.
+      - name: Upload signed release APK
+        if: always() && steps.signing.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: campmeds-release-apk
+          path: v2.2/CampMeds_V1_Fixed/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: warn

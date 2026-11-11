@@ -34,11 +34,20 @@ import java.util.UUID
  *  - Archiving is never used for an import that is missing rows: absence means "not mentioned", nothing more.
  */
 class SpreadsheetImportRepository(
-    private val db: AppDatabase,
+    /** Resolved per call, so a restore that replaces the database file cannot leave a closed handle here. */
+    private val dbProvider: () -> AppDatabase,
     private val backups: DatabaseBackupManager?,
     /** Test hook: runs inside the transaction just before commit, so a throw proves the rollback. */
     private val beforeCommit: suspend () -> Unit = {}
 ) {
+    /** Kept so existing callers and tests keep working unchanged; resolves to the same instance every call. */
+    constructor(
+        db: AppDatabase,
+        backups: DatabaseBackupManager?,
+        beforeCommit: suspend () -> Unit = {}
+    ) : this({ db }, backups, beforeCommit)
+
+    private val db: AppDatabase get() = dbProvider()
 
     sealed class Outcome {
         data class Completed(val summary: Summary) : Outcome()
@@ -101,7 +110,7 @@ class SpreadsheetImportRepository(
                 )
             }
 
-            backupName = backups?.createVerifiedBackup(db)?.name
+            backupName = backups?.createVerifiedBackup(db, com.campmeds.app.data.BackupReason.IMPORT)?.name
 
             var summary: Summary? = null
             db.withTransaction {

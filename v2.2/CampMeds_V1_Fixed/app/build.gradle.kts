@@ -4,16 +4,57 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+/**
+ * Release signing, supplied by the environment so no key material is ever stored in the repository.
+ *
+ * The distributable APK must be signed with a *persistent* key, otherwise it can never replace an installed
+ * copy (Android refuses an update whose signing certificate differs). The key lives in GitHub Actions secrets
+ * and is decoded to a temporary file by the workflow, which deletes it afterwards:
+ *
+ *   CAMPMEDS_KEYSTORE_BASE64    full keystore file, base64-encoded   (secret)
+ *   CAMPMEDS_KEYSTORE_PASSWORD  keystore password                    (secret)
+ *   CAMPMEDS_KEY_ALIAS          key alias inside the keystore        (secret)
+ *   CAMPMEDS_KEY_PASSWORD       password of that key                 (secret; may equal the keystore password)
+ *
+ * The values are passed in as environment variables (the workflow maps the secrets, which also handles the
+ * upper/lower case that `secrets.*` requires). Nothing here writes, prints or commits a secret.
+ *
+ * When they are absent the *release* build fails loudly (below) instead of silently falling back to the
+ * throwaway debug key; the debug build is never affected.
+ */
+val signingKeystorePath: String? = System.getenv("CAMPMEDS_KEYSTORE_FILE")
+val signingKeystorePassword: String? = System.getenv("CAMPMEDS_KEYSTORE_PASSWORD")
+val signingKeyAlias: String? = System.getenv("CAMPMEDS_KEY_ALIAS")
+val signingKeyPassword: String? = System.getenv("CAMPMEDS_KEY_PASSWORD")
+
+val signingValuesPresent =
+    !signingKeystorePath.isNullOrBlank() && !signingKeystorePassword.isNullOrBlank() &&
+        !signingKeyAlias.isNullOrBlank() && !signingKeyPassword.isNullOrBlank()
+
 android {
     namespace = "com.campmeds.app"
     compileSdk = 34
+
+    signingConfigs {
+        if (signingValuesPresent) {
+            create("release") {
+                storeFile = file(signingKeystorePath!!)
+                storePassword = signingKeystorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+                // The v1/v2 scheme flags are left at their defaults: Android 13+ requires v2 for installs.
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.campmeds.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3-prototype"
+        versionCode = 5
+        versionName = "1.4-prototype"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -21,6 +62,10 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Only the persistent key is ever used for a distributable APK. There is deliberately no
+            // fallback to signingConfigs.getByName("debug"): that key is generated per CI run and a build
+            // signed with it can never update an installation signed with the real key.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -123,4 +168,20 @@ dependencies {
     // One of these tests is run on a device for every migration; the runner is what makes them runnable.
     androidTestImplementation("androidx.test:runner:1.6.1")
     androidTestImplementation("androidx.room:room-testing:2.6.1")
+}
+
+/**
+ * A release APK without the persistent key would be either unsigned or signed with the debug key, and both are
+ * useless for updating an existing installation. Fail the build with an explanation instead.
+ */
+gradle.taskGraph.whenReady {
+    val buildingRelease = allTasks.any { it.name.startsWith("packageRelease") || it.name.startsWith("assembleRelease") }
+    if (buildingRelease && signingConfigs.findByName("release") == null) {
+        throw GradleException(
+            "Release signing is not configured. Add the CAMPMEDS_KEYSTORE_BASE64, CAMPMEDS_KEYSTORE_PASSWORD, " +
+                "CAMPMEDS_KEY_ALIAS and CAMPMEDS_KEY_PASSWORD GitHub Actions secrets (see README 'Signing and " +
+                "updates'). Without the original key an APK cannot update an existing installation, so no " +
+                "release APK is produced."
+        )
+    }
 }
