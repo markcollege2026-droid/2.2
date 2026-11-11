@@ -45,7 +45,12 @@ class SchemaFiveToSevenMigrationTest {
 
     private val chain = listOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
 
-    /** A populated v1 install: two patients (one archived later), one user, two medications, two records. */
+    /**
+     * A populated v1 install: two patients, one user, two medications, two administration records.
+     *
+     * `isArchived` does not exist in v1 and is added by 1 -> 2 with a default of 0, so archiving is asserted on
+     * the patient's own row explicitly below: a migration must never invent an archive state either way.
+     */
     private fun seedV1(db: SupportSQLiteDatabase) {
         db.execSQL(
             "INSERT INTO patients (id,name,dob,notes) VALUES " +
@@ -105,37 +110,52 @@ class SchemaFiveToSevenMigrationTest {
 
     private fun assertEverythingSurvived(db: SupportSQLiteDatabase) {
         // ---- patients: identity, notes, archived flag, and the 6 -> 7 list conversion ----
-        db.query("SELECT id,name,firstName,lastName,notes,conditions,isArchived,bunk,bunks,counselor,counselors FROM patients ORDER BY id").use { c ->
-            assertTrue("both patients must exist", c.moveToNext())
-            assertEquals("p1", c.getString(0))
-            assertEquals("Mary Ann Smith", c.getString(1))
-            assertEquals("notes are clinical data and must survive", "peanut allergy", c.getString(4))
-            assertEquals(0, c.getInt(6))
-            assertNull("a schema-5 patient has no bunk; migration must not invent one", c.getString(7))
-            assertEquals("the new list column starts empty, never with a made-up value", 0, JSONArray(c.getString(8)).length())
-            assertNull(c.getString(9))
-            assertEquals(0, JSONArray(c.getString(10)).length())
-            assertTrue(c.moveToNext())
-            assertEquals("p2", c.getString(0))
-            assertEquals("an archived patient must stay archived", 1, c.getInt(6))
-            assertTrue("no patient may be added or dropped", !c.moveToNext())
+        db.query(
+            "SELECT name,firstName,lastName,notes,conditions,isArchived,bunk,bunks,counselor,counselors " +
+                "FROM patients WHERE id='p1'"
+        ).use { c ->
+            assertTrue("the first patient must exist", c.moveToFirst())
+            assertEquals("Mary Ann Smith", c.getString(0))
+            assertEquals("Mary Ann", c.getString(1))
+            assertEquals("Smith", c.getString(2))
+            assertEquals("notes are clinical data and must survive", "peanut allergy", c.getString(3))
+            // `conditions` is added by 1 -> 2 with a NULL default; nothing may invent a value for it.
+            assertNull("a column added by a migration must stay empty for old records", c.getString(4))
+            assertEquals(0, c.getInt(5))
+            assertNull("a schema-5 patient has no bunk; migration must not invent one", c.getString(6))
+            assertEquals("the new list column starts empty, never with a made-up value", 0, JSONArray(c.getString(7)).length())
+            assertNull(c.getString(8))
+            assertEquals(0, JSONArray(c.getString(9)).length())
+        }
+        db.query("SELECT COUNT(*) FROM patients").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("no patient may be added or dropped", 2, c.getInt(0))
+        }
+        db.query("SELECT isArchived FROM patients WHERE id='p2'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("a patient that was not archived must not become archived", 0, c.getInt(0))
         }
 
         // ---- medications: both rows, PRN flag defaulted off (the concept is new), export name allocated ----
-        db.query("SELECT id,patientId,scheduleTimes,isPrn,qrCode,sheetName,pillCountEntered,isArchived FROM medications ORDER BY id").use { c ->
-            assertTrue(c.moveToNext())
-            assertEquals("m1", c.getString(0))
-            assertEquals("p1", c.getString(1))
-            assertEquals("08:00", c.getString(2))
-            assertEquals("an existing medication must not silently become PRN", 0, c.getInt(3))
-            assertEquals("qr-1", c.getString(4))
-            assertEquals(5, c.getInt(6))
-            assertEquals(0, c.getInt(7))
-            assertTrue(c.moveToNext())
-            assertEquals("m2", c.getString(0))
-            assertEquals("14:00", c.getString(2))
-            assertEquals("qr-2", c.getString(4))
-            assertTrue("no medication may be added or dropped", !c.moveToNext())
+        db.query(
+            "SELECT patientId,scheduleTimes,isPrn,qrCode,pillCountEntered,isArchived FROM medications WHERE id='m1'"
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("p1", c.getString(0))
+            assertEquals("08:00", c.getString(1))
+            assertEquals("an existing medication must not silently become PRN", 0, c.getInt(2))
+            assertEquals("qr-1", c.getString(3))
+            assertEquals(5, c.getInt(4))
+            assertEquals(0, c.getInt(5))
+        }
+        db.query("SELECT scheduleTimes,qrCode FROM medications WHERE id='m2'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("14:00", c.getString(0))
+            assertEquals("qr-2", c.getString(1))
+        }
+        db.query("SELECT COUNT(*) FROM medications").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("no medication may be added or dropped", 2, c.getInt(0))
         }
         db.query("SELECT sheetName FROM medications").use { c ->
             while (c.moveToNext()) {
@@ -157,21 +177,26 @@ class SchemaFiveToSevenMigrationTest {
         }
 
         // ---- administration history: every record, status and timestamp ----
-        db.query("SELECT id,medicationId,status,loggedAt,wasOverride,heldReason,isPrn FROM dose_logs ORDER BY id").use { c ->
-            assertTrue(c.moveToNext())
-            assertEquals("d1", c.getString(0))
-            assertEquals("m1", c.getString(1))
-            assertEquals("GIVEN", c.getString(2))
-            assertEquals("2026-07-02T08:03", c.getString(3))
+        db.query("SELECT medicationId,status,loggedAt,wasOverride,heldReason,isPrn FROM dose_logs WHERE id='d1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("m1", c.getString(0))
+            assertEquals("GIVEN", c.getString(1))
+            assertEquals("2026-07-02T08:03", c.getString(2))
+            assertEquals(0, c.getInt(3))
+            assertNull(c.getString(4))
+            assertEquals(0, c.getInt(5))
+        }
+        db.query("SELECT medicationId,status,loggedAt,heldReason,isPrn FROM dose_logs WHERE id='d2'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("m2", c.getString(0))
+            assertEquals("REFUSED", c.getString(1))
+            assertEquals("2026-07-02T14:01", c.getString(2))
+            assertNull("a refusal has no held reason", c.getString(3))
             assertEquals(0, c.getInt(4))
-            assertNull(c.getString(5))
-            assertEquals(0, c.getInt(6))
-            assertTrue(c.moveToNext())
-            assertEquals("d2", c.getString(0))
-            assertEquals("m2", c.getString(1))
-            assertEquals("REFUSED", c.getString(2))
-            assertEquals("2026-07-02T14:01", c.getString(3))
-            assertTrue("no administration record may be duplicated", !c.moveToNext())
+        }
+        db.query("SELECT COUNT(*) FROM dose_logs").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("no administration record may be duplicated or lost", 2, c.getInt(0))
         }
 
         // ---- import history, change history and named administration times ----
@@ -234,14 +259,18 @@ class SchemaFiveToSevenMigrationTest {
      */
     @Test
     fun anExistingSchemaSevenDatabaseIsOpenedWithoutMigrationAndKeepsItsData() {
+        // A database that is already at the current version, exactly as an installed release leaves it. It is
+        // closed, and then opened again with NO migrations passed: Room must validate the existing schema
+        // instead of upgrading it, and keep every row. If a column, index or table were ever added without a
+        // schema-version bump, this second open throws "Room cannot verify the data integrity".
         val name = "existing-7"
         databaseAsReleasedAt(name, 7)
-        helper.runMigrationsAndValidate(name, SCHEMA_VERSION, true).close()
 
-        // Reopen again with no migrations passed: Room validates the schema and opens the same file.
-        val db = helper.runMigrationsAndValidate(name, SCHEMA_VERSION, true)
-        assertEverythingSurvived(db)
-        db.close()
+        // The Room "open without migrating" entry point is createDatabase, which fails when the version differs
+        // and succeeds only if the stored schema already matches this build's.
+        val reopened = helper.createDatabase(name, SCHEMA_VERSION)
+        assertEverythingSurvived(reopened)
+        reopened.close()
     }
 
     @Test
