@@ -304,10 +304,16 @@ jobs:
                       state = "SKIPPED" if skipped else ("PASSED" if ok else "FAILED")
                       names.append("{0} :: {1}.{2}".format(state, case.get("classname") or "?", case.get("name")))
               names.sort()
-              payload = "\n".join(names).encode()
-              encoded = base64.b64encode(gzip.compress(payload)).decode()
-              if encoded:
-                  print("::notice title={0} test inventory gzip-base64::{1}".format(label, encoded))
+              failed = [n for n in names if n.startswith("FAILED")]
+              # An annotation message is capped (4096 characters), so never just send the gzip payload: report the
+              # counts and put the compressed list in *several* annotations, in order.
+              print("::notice title={0} test inventory::{1} test(s), {2} failed, {3} passed".format(
+                  label, len(names), len(failed), len(names) - len(failed)))
+              chunks = [names[i:i + 40] for i in range(0, len(names), 40)]
+              for index, chunk in enumerate(chunks, start=1):
+                  encoded = base64.b64encode(gzip.compress("\n".join(chunk).encode())).decode()
+                  print("::notice title={0} test inventory {1}/{2} gzip-base64::{3}".format(
+                      label, index, len(chunks), encoded))
           PY
 
       - name: Upload test reports
