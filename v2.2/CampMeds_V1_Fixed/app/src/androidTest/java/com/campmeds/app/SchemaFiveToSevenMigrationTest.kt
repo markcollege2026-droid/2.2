@@ -108,7 +108,12 @@ class SchemaFiveToSevenMigrationTest {
         db.close()
     }
 
-    private fun assertEverythingSurvived(db: SupportSQLiteDatabase) {
+    /**
+     * [recoverySeeded] is false for the schema-5 path: the recovery-answer and lockout columns are *added* by
+     * migration 5 -> 6, so a schema-5 file cannot contain them. Migration must leave them at their declared
+     * defaults there, and must preserve them where they already exist.
+     */
+    private fun assertEverythingSurvived(db: SupportSQLiteDatabase, recoverySeeded: Boolean = true) {
         // ---- patients: identity, notes, archived flag, and the 6 -> 7 list conversion ----
         db.query(
             "SELECT name,firstName,lastName,notes,conditions,isArchived,bunk,bunks,counselor,counselors " +
@@ -164,16 +169,24 @@ class SchemaFiveToSevenMigrationTest {
             }
         }
 
-        // ---- users: recovery answers filled at v6 must be preserved untouched by 6 -> 7 ----
+        // ---- users: recovery answers and the persistent lockout counter ----
         db.query("SELECT name,pinHash,pinSalt,recoveryQuestionIds,recoveryHashes,recoverySalts,recoveryFailures FROM users WHERE id='u1'").use { c ->
             assertTrue(c.moveToFirst())
             assertEquals("Admin", c.getString(0))
-            assertEquals("h", c.getString(1))
+            assertEquals("the PIN hash must not be rewritten by an upgrade", "h", c.getString(1))
             assertEquals("s", c.getString(2))
-            assertEquals("q1,q2,q3", c.getString(3))
-            assertEquals("h1,h2,h3", c.getString(4))
-            assertEquals("s1,s2,s3", c.getString(5))
-            assertEquals("the persistent lockout counter must survive", 2, c.getInt(6))
+            if (recoverySeeded) {
+                assertEquals("recovery questions must survive", "q1,q2,q3", c.getString(3))
+                assertEquals("h1,h2,h3", c.getString(4))
+                assertEquals("s1,s2,s3", c.getString(5))
+                assertEquals("the persistent lockout counter must survive", 2, c.getInt(6))
+            } else {
+                // Added by 5 -> 6 with NOT NULL DEFAULT '': they must be empty, never invented.
+                assertEquals("", c.getString(3))
+                assertEquals("", c.getString(4))
+                assertEquals("", c.getString(5))
+                assertEquals(0, c.getInt(6))
+            }
         }
 
         // ---- administration history: every record, status and timestamp ----
@@ -227,7 +240,7 @@ class SchemaFiveToSevenMigrationTest {
         val name = "migration-5-7"
         databaseAsReleasedAt(name, 5)
         val db = helper.runMigrationsAndValidate(name, SCHEMA_VERSION, true, MIGRATION_5_6, MIGRATION_6_7)
-        assertEverythingSurvived(db)
+        assertEverythingSurvived(db, recoverySeeded = false)
         db.close()
     }
 
@@ -259,16 +272,16 @@ class SchemaFiveToSevenMigrationTest {
      */
     @Test
     fun anExistingSchemaSevenDatabaseIsOpenedWithoutMigrationAndKeepsItsData() {
-        // A database that is already at the current version, exactly as an installed release leaves it. It is
-        // closed, and then opened again with NO migrations passed: Room must validate the existing schema
-        // instead of upgrading it, and keep every row. If a column, index or table were ever added without a
-        // schema-version bump, this second open throws "Room cannot verify the data integrity".
         val name = "existing-7"
-        databaseAsReleasedAt(name, 7)
+        // Bring a populated schema-6 database to 7 through the real migration, which is exactly what an
+        // installed copy looks like after updating: version 7, this build's schema and Room's identity record.
+        databaseAsReleasedAt(name, 6)
+        helper.runMigrationsAndValidate(name, SCHEMA_VERSION, true, MIGRATION_6_7).close()
 
-        // The Room "open without migrating" entry point is createDatabase, which fails when the version differs
-        // and succeeds only if the stored schema already matches this build's.
-        val reopened = helper.createDatabase(name, SCHEMA_VERSION)
+        // Reopen with NO migrations passed. Room validates the stored schema instead of upgrading it, so a
+        // column, index or table added without a schema-version bump fails here rather than on a device. The
+        // rows must be untouched: opening a current database is a no-op, not a rewrite.
+        val reopened = helper.runMigrationsAndValidate(name, SCHEMA_VERSION, true)
         assertEverythingSurvived(reopened)
         reopened.close()
     }
