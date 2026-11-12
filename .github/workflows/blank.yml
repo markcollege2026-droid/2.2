@@ -278,6 +278,38 @@ jobs:
                   )
           PY
 
+      # Per-test names, passed or failed, as gzip+base64 notices. Artifact/log endpoints are not reachable from
+      # every environment (the reasoning behind the existing schema notice), and the summary above only counts.
+      # No patient or user data is included: these are test class/method names.
+      - name: Publish test inventory
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import base64, glob, gzip, xml.etree.ElementTree as ET
+
+          suites = {
+              "unit": "app/build/test-results/testDebugUnitTest/*.xml",
+              "device": "app/build/outputs/androidTest-results/connected/**/*.xml",
+          }
+          for label, pattern in suites.items():
+              names = []
+              for path in sorted(glob.glob(pattern, recursive=True)):
+                  try:
+                      root = ET.parse(path).getroot()
+                  except Exception:
+                      continue
+                  for case in root.iter("testcase"):
+                      ok = not (case.findall("failure") or case.findall("error"))
+                      skipped = case.find("skipped") is not None
+                      state = "SKIPPED" if skipped else ("PASSED" if ok else "FAILED")
+                      names.append("{0} :: {1}.{2}".format(state, case.get("classname") or "?", case.get("name")))
+              names.sort()
+              payload = "\n".join(names).encode()
+              encoded = base64.b64encode(gzip.compress(payload)).decode()
+              if encoded:
+                  print("::notice title={0} test inventory gzip-base64::{1}".format(label, encoded))
+          PY
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
